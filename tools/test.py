@@ -43,6 +43,7 @@ import threading
 import utils
 import multiprocessing
 import errno
+import pty
 
 from os.path import join, dirname, abspath, basename, isdir, exists
 from datetime import datetime
@@ -625,9 +626,13 @@ def CheckedUnlink(name):
       PrintError("os.unlink() " + str(e))
     break
 
-def Execute(args, context, timeout=None, env={}):
-  (fd_out, outname) = tempfile.mkstemp()
-  (fd_err, errname) = tempfile.mkstemp()
+def Execute(args, context, timeout=None, env={}, faketty=False):
+  if faketty:
+    (out_master, fd_out) = pty.openpty()
+    fd_err = fd_out
+  else:
+    (fd_out, outname) = tempfile.mkstemp()
+    (fd_err, errname) = tempfile.mkstemp()
 
   # Extend environment
   env_copy = os.environ.copy()
@@ -642,12 +647,18 @@ def Execute(args, context, timeout=None, env={}):
     stderr = fd_err,
     env = env_copy
   )
-  os.close(fd_out)
-  os.close(fd_err)
-  output = file(outname).read()
-  errors = file(errname).read()
-  CheckedUnlink(outname)
-  CheckedUnlink(errname)
+  if faketty:
+    output = os.read(out_master, 9999)
+    os.close(out_master)
+    errors = output
+  else:
+    os.close(fd_out)
+    os.close(fd_err)
+    output = file(outname).read()
+    errors = file(errname).read()
+    CheckedUnlink(outname)
+    CheckedUnlink(errname)
+
   return CommandOutput(exit_code, timed_out, output, errors)
 
 
