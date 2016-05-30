@@ -138,7 +138,7 @@ class TTYTestConfiguration(test.TestConfiguration):
     # Skip these tests on Windows, as pseudo terminals are not available
     # FIXME(Fishrock123): Currently this only runs properly on OS X in the
     # Jenkins CI
-    if platform.system() != 'Darwin':
+    if platform.system() == 'Windows':
       print "Skipping pseudo-tty tests, flaky on non-OS X in Jenkins CI"
       return result
     for test in all_tests:

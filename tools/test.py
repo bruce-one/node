@@ -597,8 +597,8 @@ def RunProcess(context, timeout, args, **rest):
   # loop and keep track of whether or not it times out.
   exit_code = None
   sleep_time = INITIAL_SLEEP_TIME
+  output = ''
   if faketty:
-    output = ''
     while True:
       if time.time() >= end_time:
         # Kill the process and wait for it to exit.
@@ -620,8 +620,6 @@ def RunProcess(context, timeout, args, **rest):
           break
         output += data
 
-    return process, process.poll(), timed_out, output
-
   while exit_code is None:
     if (not end_time is None) and (time.time() >= end_time):
       # Kill the process and wait for it to exit.
@@ -634,7 +632,7 @@ def RunProcess(context, timeout, args, **rest):
       sleep_time = sleep_time * SLEEP_TIME_FACTOR
       if sleep_time > MAX_SLEEP_TIME:
         sleep_time = MAX_SLEEP_TIME
-  return (process, exit_code, timed_out, '')
+  return (process, exit_code, timed_out, output)
 
 
 def PrintError(str):
