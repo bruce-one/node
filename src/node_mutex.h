@@ -26,31 +26,31 @@ class MutexBase {
 
   class ScopedLock {
    public:
-    inline explicit ScopedLock(MutexBase* mutex);
-    inline explicit ScopedLock(ScopedUnlock* scoped_unlock);
+    inline explicit ScopedLock(const MutexBase& mutex);
+    inline explicit ScopedLock(const ScopedUnlock& scoped_unlock);
     inline ~ScopedLock();
 
    private:
     template <typename> friend class ConditionVariableBase;
     friend class ScopedUnlock;
-    MutexBase* const mutex_;
+    const MutexBase& mutex_;
     DISALLOW_COPY_AND_ASSIGN(ScopedLock);
   };
 
   class ScopedUnlock {
    public:
-    inline explicit ScopedUnlock(ScopedLock* scoped_lock);
+    inline explicit ScopedUnlock(const ScopedLock& scoped_lock);
     inline ~ScopedUnlock();
 
    private:
     friend class ScopedLock;
-    MutexBase* const mutex_;
+    const MutexBase& mutex_;
     DISALLOW_COPY_AND_ASSIGN(ScopedUnlock);
   };
 
  private:
   template <typename> friend class ConditionVariableBase;
-  typename Traits::MutexT mutex_;
+  mutable typename Traits::MutexT mutex_;
   DISALLOW_COPY_AND_ASSIGN(MutexBase);
 };
 
@@ -106,7 +106,7 @@ void ConditionVariableBase<Traits>::Signal(const ScopedLock&) {
 
 template <typename Traits>
 void ConditionVariableBase<Traits>::Wait(const ScopedLock& scoped_lock) {
-  Traits::cond_wait(&cond_, &scoped_lock.mutex_->mutex_);
+  Traits::cond_wait(&cond_, &scoped_lock.mutex_.mutex_);
 }
 
 template <typename Traits>
@@ -130,30 +130,29 @@ void MutexBase<Traits>::Unlock() {
 }
 
 template <typename Traits>
-MutexBase<Traits>::ScopedLock::ScopedLock(MutexBase* mutex) : mutex_(mutex) {
-  mutex_->Lock();
+MutexBase<Traits>::ScopedLock::ScopedLock(const MutexBase& mutex)
+    : mutex_(mutex) {
+  Traits::mutex_lock(&mutex_.mutex_);
 }
 
 template <typename Traits>
-MutexBase<Traits>::ScopedLock::ScopedLock(ScopedUnlock* scoped_unlock)
-    : mutex_(scoped_unlock->mutex_) {
-  mutex_->Lock();
-}
+MutexBase<Traits>::ScopedLock::ScopedLock(const ScopedUnlock& scoped_unlock)
+    : MutexBase(scoped_unlock.mutex_) {}
 
 template <typename Traits>
 MutexBase<Traits>::ScopedLock::~ScopedLock() {
-  mutex_->Unlock();
+  Traits::mutex_unlock(&mutex_.mutex_);
 }
 
 template <typename Traits>
-MutexBase<Traits>::ScopedUnlock::ScopedUnlock(ScopedLock* scoped_lock)
-    : mutex_(scoped_lock->mutex_) {
-  mutex_->Unlock();
+MutexBase<Traits>::ScopedUnlock::ScopedUnlock(const ScopedLock& scoped_lock)
+    : mutex_(scoped_lock.mutex_) {
+  Traits::mutex_unlock(&mutex_.mutex_);
 }
 
 template <typename Traits>
 MutexBase<Traits>::ScopedUnlock::~ScopedUnlock() {
-  mutex_->Lock();
+  Traits::mutex_lock(&mutex_.mutex_);
 }
 
 }  // namespace node

@@ -3698,7 +3698,7 @@ static void EnableDebug(Environment* env) {
 
 // Called from an arbitrary thread.
 static void TryStartDebugger() {
-  Mutex::ScopedLock scoped_lock(&node_isolate_mutex);
+  Mutex::ScopedLock scoped_lock(node_isolate_mutex);
   if (auto isolate = node_isolate) {
     v8::Debug::DebugBreak(isolate);
     uv_async_send(&dispatch_debug_messages_async);
@@ -3708,7 +3708,7 @@ static void TryStartDebugger() {
 
 // Called from the main thread.
 static void DispatchDebugMessagesAsyncCallback(uv_async_t* handle) {
-  Mutex::ScopedLock scoped_lock(&node_isolate_mutex);
+  Mutex::ScopedLock scoped_lock(node_isolate_mutex);
   if (auto isolate = node_isolate) {
     if (debugger_running == false) {
       fprintf(stderr, "Starting debugger agent.\n");
@@ -4251,7 +4251,7 @@ static void StartNodeInstance(void* arg) {
   Isolate* isolate = Isolate::New(params);
 
   {
-    Mutex::ScopedLock scoped_lock(&node_isolate_mutex);
+    Mutex::ScopedLock scoped_lock(node_isolate_mutex);
     if (instance_data->is_main()) {
       CHECK_EQ(node_isolate, nullptr);
       node_isolate = isolate;
@@ -4329,7 +4329,7 @@ static void StartNodeInstance(void* arg) {
   }
 
   {
-    Mutex::ScopedLock scoped_lock(&node_isolate_mutex);
+    Mutex::ScopedLock scoped_lock(node_isolate_mutex);
     if (node_isolate == isolate)
       node_isolate = nullptr;
   }

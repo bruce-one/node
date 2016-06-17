@@ -292,7 +292,7 @@ class V8NodeInspector : public blink::V8Inspector {
     running_nested_loop_ = true;
     do {
       {
-        Mutex::ScopedLock scoped_lock(&agent_->pause_lock_);
+        Mutex::ScopedLock scoped_lock(agent_->pause_lock_);
         agent_->pause_cond_.Wait(scoped_lock);
       }
       while (v8::platform::PumpMessageLoop(platform_, isolate_))
@@ -432,7 +432,7 @@ void AgentImpl::OnRemoteDataIO(uv_stream_t* stream,
                            const uv_buf_t* b) {
   inspector_socket_t* socket = static_cast<inspector_socket_t*>(stream->data);
   AgentImpl* agent = static_cast<AgentImpl*>(socket->data);
-  Mutex::ScopedLock scoped_lock(&agent->pause_lock_);
+  Mutex::ScopedLock scoped_lock(agent->pause_lock_);
   if (read > 0) {
     std::string str(b->base, read);
     agent->PushPendingMessage(&agent->message_queue_, str);
@@ -467,13 +467,13 @@ void AgentImpl::OnRemoteDataIO(uv_stream_t* stream,
 
 void AgentImpl::PushPendingMessage(std::vector<std::string>* queue,
                                    const std::string& message) {
-  Mutex::ScopedLock scoped_lock(&queue_lock_);
+  Mutex::ScopedLock scoped_lock(queue_lock_);
   queue->push_back(message);
 }
 
 void AgentImpl::SwapBehindLock(std::vector<std::string> AgentImpl::*queue,
                                std::vector<std::string>* output) {
-  Mutex::ScopedLock scoped_lock(&queue_lock_);
+  Mutex::ScopedLock scoped_lock(queue_lock_);
   (this->*queue).swap(*output);
 }
 

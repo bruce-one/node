@@ -263,7 +263,7 @@ void Agent::ChildSignalCb(uv_async_t* signal) {
   HandleScope scope(isolate);
   Local<Object> api = PersistentToLocal(isolate, a->api_);
 
-  Mutex::ScopedLock scoped_lock(&a->message_mutex_);
+  Mutex::ScopedLock scoped_lock(a->message_mutex_);
   while (AgentMessage* msg = a->messages_.PopFront()) {
     // Time to close everything
     if (msg->data() == nullptr) {
@@ -298,7 +298,7 @@ void Agent::ChildSignalCb(uv_async_t* signal) {
 
 
 void Agent::EnqueueMessage(AgentMessage* message) {
-  Mutex::ScopedLock scoped_lock(&message_mutex_);
+  Mutex::ScopedLock scoped_lock(message_mutex_);
   messages_.PushBack(message);
   uv_async_send(&child_signal_);
 }
