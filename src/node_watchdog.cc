@@ -159,7 +159,7 @@ BOOL WINAPI SigintWatchdogHelper::WinCtrlCHandlerRoutine(DWORD dwCtrlType) {
 
 
 bool SigintWatchdogHelper::InformWatchdogsAboutSignal() {
-  uv_mutex_lock(&instance.list_mutex_);
+  Mutex::ScopedLock scoped_lock(instance.list_mutex_);
 
   bool is_stopping = false;
 #ifdef __POSIX__
@@ -175,14 +175,13 @@ bool SigintWatchdogHelper::InformWatchdogsAboutSignal() {
   for (auto it : instance.watchdogs_)
     it->HandleSigint();
 
-  uv_mutex_unlock(&instance.list_mutex_);
   return is_stopping;
 }
 
 
 int SigintWatchdogHelper::Start() {
   int ret = 0;
-  uv_mutex_lock(&mutex_);
+  Mutex::ScopedLock scoped_lock(mutex_);
 
   if (start_stop_count_++ > 0) {
     goto dont_start;
@@ -209,29 +208,30 @@ int SigintWatchdogHelper::Start() {
 #endif
 
  dont_start:
-  uv_mutex_unlock(&mutex_);
   return ret;
 }
 
 
 bool SigintWatchdogHelper::Stop() {
-  uv_mutex_lock(&mutex_);
-  uv_mutex_lock(&list_mutex_);
+  Mutex::ScopedLock scoped_lock(mutex_);
 
-  bool had_pending_signal = has_pending_signal_;
+  bool had_pending_signal;
+  {
+    Mutex::ScopedLock scoped_lock_watchdoglist(list_mutex_);
 
-  if (--start_stop_count_ > 0) {
-    uv_mutex_unlock(&list_mutex_);
-    goto dont_stop;
-  }
+    had_pending_signal = has_pending_signal_;
+
+    if (--start_stop_count_ > 0) {
+      goto dont_stop;
+    }
 
 #ifdef __POSIX__
-  // Set stopping now because it's only protected by list_mutex_.
-  stopping_ = true;
+    // Set stopping now because it's only protected by list_mutex_.
+    stopping_ = true;
 #endif
 
-  watchdogs_.clear();
-  uv_mutex_unlock(&list_mutex_);
+    watchdogs_.clear();
+  }
 
 #ifdef __POSIX__
   if (!has_running_thread_) {
@@ -252,7 +252,6 @@ bool SigintWatchdogHelper::Stop() {
 
   had_pending_signal = has_pending_signal_;
  dont_stop:
-  uv_mutex_unlock(&mutex_);
 
   has_pending_signal_ = false;
   return had_pending_signal;
@@ -260,23 +259,19 @@ bool SigintWatchdogHelper::Stop() {
 
 
 void SigintWatchdogHelper::Register(SigintWatchdog* wd) {
-  uv_mutex_lock(&list_mutex_);
+  Mutex::ScopedLock scoped_lock(list_mutex_);
 
   watchdogs_.push_back(wd);
-
-  uv_mutex_unlock(&list_mutex_);
 }
 
 
 void SigintWatchdogHelper::Unregister(SigintWatchdog* wd) {
-  uv_mutex_lock(&list_mutex_);
+  Mutex::ScopedLock scoped_lock(list_mutex_);
 
   auto it = std::find(watchdogs_.begin(), watchdogs_.end(), wd);
 
   CHECK_NE(it, watchdogs_.end());
   watchdogs_.erase(it);
-
-  uv_mutex_unlock(&list_mutex_);
 }
 
 
@@ -288,9 +283,6 @@ SigintWatchdogHelper::SigintWatchdogHelper()
   stopping_ = false;
   CHECK_EQ(0, uv_sem_init(&sem_, 0));
 #endif
-
-  CHECK_EQ(0, uv_mutex_init(&mutex_));
-  CHECK_EQ(0, uv_mutex_init(&list_mutex_));
 };
 
 
@@ -302,9 +294,6 @@ SigintWatchdogHelper::~SigintWatchdogHelper() {
   CHECK_EQ(has_running_thread_, false);
   uv_sem_destroy(&sem_);
 #endif
-
-  uv_mutex_destroy(&mutex_);
-  uv_mutex_destroy(&list_mutex_);
 }
 
 SigintWatchdogHelper SigintWatchdogHelper::instance;

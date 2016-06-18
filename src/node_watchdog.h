@@ -3,6 +3,7 @@
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
+#include "node_mutex.h"
 #include "v8.h"
 #include "uv.h"
 #include <vector>
@@ -71,8 +72,8 @@ class SigintWatchdogHelper {
 
     int start_stop_count_;
 
-    uv_mutex_t mutex_;
-    uv_mutex_t list_mutex_;
+    node::Mutex mutex_;
+    node::Mutex list_mutex_;
     std::vector<SigintWatchdog*> watchdogs_;
     bool has_pending_signal_;
 
