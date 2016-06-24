@@ -18,6 +18,7 @@
     'node_module_version%': '',
 
     'node_tag%': '',
+    'node_use_lto%': '',
     'uv_library%': 'static_library',
 
     'openssl_fips%': '',
@@ -333,6 +334,13 @@
           [ 'node_shared=="true"', {
             'cflags': [ '-fPIC' ],
           }],
+          ['node_use_lto=="true"', {
+            'conditions': [ [ 'clang==1', {
+              'cflags': [ '-flto' ],
+            }, {
+              'cflags': [ '-flto=16' ],
+            } ] ],
+          }],
         ],
       }],
       ['OS=="android"', {
@@ -389,6 +397,13 @@
               'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0',
               'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++0x',  # -std=gnu++0x
               'CLANG_CXX_LIBRARY': 'libc++',
+            },
+          }],
+          ['node_use_lto=="true"', {
+            'xcode_settings': {
+              'OTHER_CFLAGS': [
+                '-flto',
+              ],
             },
           }],
         ],
