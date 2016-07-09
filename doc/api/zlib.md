@@ -386,7 +386,7 @@ added: v0.7.0
 
 ## zlib.constants
 
-Provides an object enumerating Zlib-related [constants][].
+Provides an object enumerating Zlib-related constants.
 
 Reset the compressor/decompressor to factory defaults. Only applicable to
 the inflate and deflate algorithms.
@@ -542,4 +542,3 @@ Decompress a Buffer or string with Unzip.
 [Unzip]: #zlib_class_zlib_unzip
 [`.flush()`]: #zlib_zlib_flush_kind_callback
 [Buffer]: buffer.html
-[constants]: #constants_constants

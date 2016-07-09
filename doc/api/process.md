@@ -1664,7 +1664,7 @@ cases:
 [`process.argv`]: #process_process_argv
 [`process.exit()`]: #process_process_exit_code
 [`process.kill()`]: #process_process_kill_pid_signal
-[`process.execPath`]: #process_process_execPath
+[`process.execPath`]: #process_process_execpath
 [`promise.catch()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/catch
 [`require.main`]: modules.html#modules_accessing_the_main_module
 [`setTimeout(fn, 0)`]: timers.html#timers_settimeout_callback_delay_arg
