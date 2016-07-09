@@ -148,7 +148,7 @@ From `zlib/zconf.h`, modified to node.js's usage:
 
 The memory requirements for deflate are (in bytes):
 
-```
+```js
 (1 << (windowBits+2)) +  (1 << (memLevel+9))
 ```
 
@@ -158,7 +158,7 @@ That is: 128K for windowBits=15  +  128K for memLevel = 8
 For example, to reduce the default memory requirements from 256K to 128K, the
 options shoud be set to:
 
-```
+```js
 { windowBits: 14, memLevel: 7 }
 ```
 
@@ -166,7 +166,7 @@ This will, however, generally degrade compression.
 
 The memory requirements for inflate are (in bytes)
 
-```
+```js
 1 << windowBits
 ```
 

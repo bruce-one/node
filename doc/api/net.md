@@ -858,7 +858,7 @@ server.listen(8124, () => {
 
 Test this by using `telnet`:
 
-```
+```sh
 telnet localhost 8124
 ```
 
