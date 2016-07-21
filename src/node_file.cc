@@ -868,6 +868,12 @@ static void MKDir(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
+extern "C" {
+UV_EXTERN
+ssize_t uv_fs_realpath_x(uv_loop_t* loop, uv_fs_t* req,
+    const char* path, uv_fs_cb cb);
+}
+
 static void RealPath(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
 
@@ -888,7 +894,7 @@ static void RealPath(const FunctionCallbackInfo<Value>& args) {
   if (callback->IsObject()) {
     ASYNC_CALL(realpath, callback, encoding, *path);
   } else {
-    SYNC_CALL(realpath, *path, *path);
+    SYNC_CALL(realpath_x, *path, *path);
     const char* link_path = static_cast<const char*>(SYNC_REQ.ptr);
     Local<Value> rc = StringBytes::Encode(env->isolate(),
                                           link_path,

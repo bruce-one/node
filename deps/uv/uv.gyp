@@ -62,7 +62,9 @@
         'src/threadpool.c',
         'src/uv-common.c',
         'src/uv-common.h',
-        'src/version.c'
+        'src/version.c',
+        'src/path.c',
+        'src/realpath.c'
       ],
       'conditions': [
         [ 'OS=="win"', {
