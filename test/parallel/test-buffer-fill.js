@@ -390,3 +390,23 @@ assert.throws(() => {
   });
   buf.fill('');
 });
+
+assert.strictEqual(
+    Buffer.allocUnsafeSlow(16).fill('a', 'utf16le').toString('utf16le'),
+    'aaaaaaaa');
+assert.strictEqual(
+    Buffer.allocUnsafeSlow(16).fill('a', 'latin1').toString('latin1'),
+    'aaaaaaaaaaaaaaaa');
+assert.strictEqual(
+    Buffer.allocUnsafeSlow(16).fill('a', 'utf8').toString('utf8'),
+    'aaaaaaaaaaaaaaaa');
+
+assert.strictEqual(
+    Buffer.allocUnsafeSlow(16).fill('Љ', 'utf16le').toString('utf16le'),
+    'ЉЉЉЉЉЉЉЉ');
+assert.strictEqual(
+    Buffer.allocUnsafeSlow(16).fill('Љ', 'latin1').toString('latin1'),
+    '\t'.repeat(16));
+assert.strictEqual(
+    Buffer.allocUnsafeSlow(16).fill('Љ', 'utf8').toString('utf8'),
+    'ЉЉЉЉЉЉЉЉ');
