@@ -391,6 +391,7 @@ assert.throws(() => {
   buf.fill('');
 });
 
+console.error(Buffer.allocUnsafeSlow(16).fill('a', 'utf16le'))
 assert.strictEqual(
     Buffer.allocUnsafeSlow(16).fill('a', 'utf16le').toString('utf16le'),
     'aaaaaaaa');
