@@ -8,6 +8,10 @@ const SIZE = 28;
 const buf1 = Buffer.allocUnsafe(SIZE);
 const buf2 = Buffer.allocUnsafe(SIZE);
 
+assert.deepStrictEqual(
+    Buffer.allocUnsafeSlow(16).fill('ab', 'utf16le'),
+    Buffer.from('61006200610062006100620061006200', 'hex'));
+
 
 // Default encoding
 testBufs('abc');
