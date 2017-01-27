@@ -61,7 +61,7 @@
     'v8_android_log_stdout%': 0,
 
     # Force disable libstdc++ debug mode.
-    'disable_glibcxx_debug%': 0,
+    'disable_glibcxx_debug%': 1,
 
     'v8_enable_backtrace%': 0,
 
