@@ -843,7 +843,7 @@ def configure_node(o):
   else:
     o['variables']['node_use_lttng'] = 'false'
 
-  o['variables']['node_use_lto'] = b(options.use_lto)
+  o['variables']['node_use_lto'] = 'true'#b(options.use_lto)
 
   if options.no_ifaddrs:
     o['defines'] += ['SUNOS_NO_IFADDRS']
