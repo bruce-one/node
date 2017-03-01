@@ -180,6 +180,7 @@ namespace node {
   V(preference_string, "preference")                                          \
   V(priority_string, "priority")                                              \
   V(produce_cached_data_string, "produceCachedData")                          \
+  V(promise_rejection_index_string, "_promiseRejectionIndex")                 \
   V(raw_string, "raw")                                                        \
   V(readable_string, "readable")                                              \
   V(received_shutdown_string, "receivedShutdown")                             \
@@ -556,6 +557,7 @@ class Environment {
   static const int kContextEmbedderDataIndex = NODE_CONTEXT_EMBEDDER_DATA_INDEX;
 
   PromiseTracker promise_tracker_;
+  int64_t promise_tracker_index_ = 0;
 
  private:
   inline void ThrowError(v8::Local<v8::Value> (*fun)(v8::Local<v8::String>),
