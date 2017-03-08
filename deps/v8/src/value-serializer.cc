@@ -1838,6 +1838,20 @@ static Maybe<bool> SetPropertiesFromKeyValuePairs(Isolate* isolate,
   return Just(true);
 }
 
+namespace {
+
+// Throws a generic "deserialization failed" exception by default, unless a more
+// specific exception has already been thrown.
+void ThrowDeserializationExceptionIfNonePending(Isolate* isolate) {
+  if (!isolate->has_pending_exception()) {
+    isolate->Throw(*isolate->factory()->NewError(
+        MessageTemplate::kDataCloneDeserializationError));
+  }
+  DCHECK(isolate->has_pending_exception());
+}
+
+}  // namespace
+
 MaybeHandle<Object>
 ValueDeserializer::ReadObjectUsingEntireBufferForLegacyFormat() {
   DCHECK_EQ(version_, 0u);
@@ -1870,7 +1884,7 @@ ValueDeserializer::ReadObjectUsingEntireBufferForLegacyFormat() {
             !SetPropertiesFromKeyValuePairs(
                  isolate_, js_object, &stack[begin_properties], num_properties)
                  .FromMaybe(false)) {
-          DCHECK(isolate_->has_pending_exception());
+          ThrowDeserializationExceptionIfNonePending(isolate_);
           return MaybeHandle<Object>();
         }
 
@@ -1901,7 +1915,7 @@ ValueDeserializer::ReadObjectUsingEntireBufferForLegacyFormat() {
             !SetPropertiesFromKeyValuePairs(
                  isolate_, js_array, &stack[begin_properties], num_properties)
                  .FromMaybe(false)) {
-          DCHECK(isolate_->has_pending_exception());
+          ThrowDeserializationExceptionIfNonePending(isolate_);
           return MaybeHandle<Object>();
         }
 
