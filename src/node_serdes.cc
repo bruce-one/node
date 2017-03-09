@@ -119,7 +119,8 @@ Maybe<bool> SerializerContext::WriteHostObject(Isolate* isolate,
     if (input->IsArrayBufferView()) {
       Local<Value> write_ab_view =
           object()->Get(env()->context(),
-                        env()->write_array_buffer_view_string()).ToLocalChecked();
+                        env()->write_array_buffer_view_string())
+                        .ToLocalChecked();
 
       if (write_ab_view->IsFunction()) {
         ret = write_ab_view.As<Function>()->Call(env()->context(),

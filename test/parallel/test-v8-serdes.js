@@ -100,7 +100,7 @@ const objects = [
 }
 
 {
-  const buf = Buffer.from('ff096f5303666f6f5e007b01', 'hex');
+  const buf = Buffer.from('ff0d6f2203666f6f5e007b01', 'hex');
 
   const des = new Deserializer(buf);
   des.readHeader();
