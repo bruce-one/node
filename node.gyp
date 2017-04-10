@@ -60,6 +60,7 @@
       'lib/_stream_transform.js',
       'lib/_stream_passthrough.js',
       'lib/_stream_wrap.js',
+      'lib/serdes.js',
       'lib/string_decoder.js',
       'lib/sys.js',
       'lib/timers.js',

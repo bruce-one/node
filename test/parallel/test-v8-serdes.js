@@ -2,7 +2,7 @@
 
 const common = require('../common');
 const assert = require('assert');
-const v8 = require('v8');
+const serdes = require('serdes');
 const os = require('os');
 
 const circular = {};
@@ -21,13 +21,13 @@ const objects = [
 ];
 
 {
-  const ser = new v8.DefaultSerializer();
+  const ser = new serdes.DefaultSerializer();
   ser.writeHeader();
   for (const obj of objects) {
     ser.writeValue(obj);
   }
 
-  const des = new v8.DefaultDeserializer(ser.releaseBuffer());
+  const des = new serdes.DefaultDeserializer(ser.releaseBuffer());
   des.readHeader();
 
   for (const obj of objects) {
@@ -37,12 +37,12 @@ const objects = [
 
 {
   for (const obj of objects) {
-    assert.deepStrictEqual(v8.deserialize(v8.serialize(obj)), obj);
+    assert.deepStrictEqual(serdes.deserialize(serdes.serialize(obj)), obj);
   }
 }
 
 {
-  const ser = new v8.DefaultSerializer();
+  const ser = new serdes.DefaultSerializer();
   ser._getDataCloneError = common.mustCall((message) => {
     assert.strictEqual(message, '[object Object] could not be cloned.');
     return new Error('foobar');
@@ -56,7 +56,7 @@ const objects = [
 }
 
 {
-  const ser = new v8.DefaultSerializer();
+  const ser = new serdes.DefaultSerializer();
   ser._writeHostObject = common.mustCall((object) => {
     assert.strictEqual(object, process.stdin._handle);
     const buf = Buffer.from('stdin');
@@ -71,7 +71,7 @@ const objects = [
   ser.writeHeader();
   ser.writeValue({ val: process.stdin._handle });
 
-  const des = new v8.DefaultDeserializer(ser.releaseBuffer());
+  const des = new serdes.DefaultDeserializer(ser.releaseBuffer());
   des._readHostObject = common.mustCall(() => {
     const length = des.readUint32();
     const buf = des.readRawBytes(length);
@@ -89,7 +89,7 @@ const objects = [
 }
 
 {
-  const ser = new v8.DefaultSerializer();
+  const ser = new serdes.DefaultSerializer();
   ser._writeHostObject = common.mustCall((object) => {
     throw new Error('foobar');
   });
@@ -101,17 +101,17 @@ const objects = [
 }
 
 {
-  assert.throws(() => v8.serialize(process.stdin._handle),
+  assert.throws(() => serdes.serialize(process.stdin._handle),
                 /^Error: Unknown host object type: \[object .*\]$/);
 }
 
 {
   const buf = Buffer.from('ff0d6f2203666f6f5e007b01', 'hex');
 
-  const des = new v8.DefaultDeserializer(buf);
+  const des = new serdes.DefaultDeserializer(buf);
   des.readHeader();
 
-  const ser = new v8.DefaultSerializer();
+  const ser = new serdes.DefaultSerializer();
   ser.writeHeader();
 
   ser.writeValue(des.readValue());
@@ -129,5 +129,5 @@ const objects = [
   const expectedResult = os.endianness() === 'LE' ?
       new Uint16Array([0xdead, 0xbeef]) : new Uint16Array([0xadde, 0xefbe]);
 
-  assert.deepStrictEqual(v8.deserialize(buf), expectedResult);
+  assert.deepStrictEqual(serdes.deserialize(buf), expectedResult);
 }
