@@ -5,7 +5,7 @@ const assert = require('assert');
 const tick = require('./tick');
 const initHooks = require('./init-hooks');
 const { checkInvocations } = require('./hook-checks');
-const TIMEOUT = 1;
+const TIMEOUT = common.platformTimeout(100);
 
 const hooks = initHooks();
 hooks.enable();
