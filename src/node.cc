@@ -81,6 +81,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/un.h>
 
 #include <string>
 #include <vector>
@@ -4641,6 +4642,9 @@ inline int Start(uv_loop_t* event_loop,
 }
 
 int Start(int argc, char** argv) {
+  struct sockaddr_un saddr;
+  fprintf(stderr, "sizeof(sockaddr_un.sun_path) = %zu\n", sizeof(saddr.sun_path));
+  CHECK_LE(sizeof(saddr.sun_path), 255);
   atexit([] () { uv_tty_reset_mode(); });
   PlatformInit();
 
