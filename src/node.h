@@ -166,7 +166,7 @@ NODE_EXTERN v8::Local<v8::Value> MakeCallback(
     v8::Local<v8::Value>* argv);
 NODE_EXTERN v8::Local<v8::Value> MakeCallback(
     v8::Isolate* isolate,
-    v8::Local<v8::Object> recv,
+    v8::Local<v8::Value> recv,
     v8::Local<v8::Function> callback,
     int argc,
     v8::Local<v8::Value>* argv);

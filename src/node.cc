@@ -1459,7 +1459,7 @@ Local<Value> MakeCallback(Isolate* isolate,
 
 
 Local<Value> MakeCallback(Isolate* isolate,
-                          Local<Object> recv,
+                          Local<Value> recv,
                           Local<Function> callback,
                           int argc,
                           Local<Value> argv[]) {
@@ -1474,7 +1474,7 @@ Local<Value> MakeCallback(Isolate* isolate,
   Environment* env = Environment::GetCurrent(callback->CreationContext());
   Context::Scope context_scope(env->context());
   return handle_scope.Escape(
-      MakeCallback(env, recv.As<Value>(), callback, argc, argv));
+      MakeCallback(env, recv, callback, argc, argv));
 }
 
 
