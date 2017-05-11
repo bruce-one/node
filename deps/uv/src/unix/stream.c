@@ -1517,7 +1517,9 @@ int uv_try_write(uv_stream_t* stream,
     uv__stream_osx_interrupt_select(stream);
   }
 
-  if (written == 0 && req_size != 0)
+  if (req.error != 0)
+    return req.error;
+  else if (written == 0 && req_size != 0)
     return -EAGAIN;
   else
     return written;
