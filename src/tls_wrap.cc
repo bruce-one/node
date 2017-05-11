@@ -318,6 +318,7 @@ void TLSWrap::EncOut() {
           ->NewInstance(env()->context()).ToLocalChecked();
   WriteWrap* write_req = WriteWrap::New(env(),
                                         req_wrap_obj,
+                                        stream_,
                                         this,
                                         EncOutCb);
 
@@ -337,7 +338,7 @@ void TLSWrap::EncOut() {
 
 
 void TLSWrap::EncOutCb(WriteWrap* req_wrap, int status) {
-  TLSWrap* wrap = req_wrap->wrap()->Cast<TLSWrap>();
+  TLSWrap* wrap = req_wrap->orig_wrap()->Cast<TLSWrap>();
   req_wrap->Dispose();
 
   // We should not be getting here after `DestroySSL`, because all queued writes

@@ -161,7 +161,11 @@ int StreamBase::Writev(const FunctionCallbackInfo<Value>& args) {
   wrap = GetAsyncWrap();
   CHECK_NE(wrap, nullptr);
   env->set_init_trigger_id(wrap->get_id());
-  req_wrap = WriteWrap::New(env, req_wrap_obj, this, AfterWrite, storage_size);
+  req_wrap = WriteWrap::New(env,
+                            req_wrap_obj,
+                            this, this,
+                            AfterWrite,
+                            storage_size);
 
   offset = 0;
   if (!all_buffers) {
@@ -251,7 +255,7 @@ int StreamBase::WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   if (wrap != nullptr)
     env->set_init_trigger_id(wrap->get_id());
   // Allocate, or write rest
-  req_wrap = WriteWrap::New(env, req_wrap_obj, this, AfterWrite);
+  req_wrap = WriteWrap::New(env, req_wrap_obj, this, this, AfterWrite);
 
   err = DoWrite(req_wrap, bufs, count, nullptr);
   req_wrap_obj->Set(env->async(), True(env->isolate()));
@@ -335,7 +339,8 @@ int StreamBase::WriteString(const FunctionCallbackInfo<Value>& args) {
   wrap = GetAsyncWrap();
   if (wrap != nullptr)
     env->set_init_trigger_id(wrap->get_id());
-  req_wrap = WriteWrap::New(env, req_wrap_obj, this, AfterWrite, storage_size);
+  req_wrap = WriteWrap::New(
+      env, req_wrap_obj, this, this, AfterWrite, storage_size);
 
   data = req_wrap->Extra();
 
@@ -396,7 +401,7 @@ int StreamBase::WriteString(const FunctionCallbackInfo<Value>& args) {
 
 
 void StreamBase::AfterWrite(WriteWrap* req_wrap, int status) {
-  StreamBase* wrap = req_wrap->wrap();
+  StreamBase* wrap = req_wrap->target_wrap();
   Environment* env = req_wrap->env();
 
   HandleScope handle_scope(env->isolate());

@@ -39,7 +39,7 @@
 #include <stdlib.h>  // abort()
 #include <string.h>  // memcpy()
 #include <limits.h>  // INT_MAX
-
+#include <unistd.h>
 
 namespace node {
 
@@ -103,6 +103,8 @@ void StreamWrap::AddMethods(Environment* env,
                             v8::Local<v8::FunctionTemplate> target,
                             int flags) {
   env->SetProtoMethod(target, "setBlocking", SetBlocking);
+  env->SetProtoMethod(target, "flush", Flush);
+  env->SetProtoMethod(target, "setFlushable", SetFlushable);
   StreamBase::AddMethods<StreamWrap>(env, target, flags);
 }
 
@@ -143,9 +145,14 @@ bool StreamWrap::IsIPCPipe() {
 
 
 void StreamWrap::UpdateWriteQueueSize() {
+  size_t size = stream()->write_queue_size;
+
+  for (const uv_buf_t& buf : write_queue_)
+    size += buf.len;
+
   HandleScope scope(env()->isolate());
   Local<Integer> write_queue_size =
-      Integer::NewFromUnsigned(env()->isolate(), stream()->write_queue_size);
+      Integer::NewFromUnsigned(env()->isolate(), size);
   object()->Set(env()->write_queue_size_string(), write_queue_size);
 }
 
@@ -294,6 +301,31 @@ void StreamWrap::SetBlocking(const FunctionCallbackInfo<Value>& args) {
 }
 
 
+void StreamWrap::Flush(const FunctionCallbackInfo<Value>& args) {
+  StreamWrap* wrap;
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+
+  if (!wrap->IsAlive())
+    return args.GetReturnValue().Set(UV_EINVAL);
+
+  wrap->Flush();
+  args.GetReturnValue().Set(0);
+}
+
+
+void StreamWrap::SetFlushable(const FunctionCallbackInfo<Value>& args) {
+  StreamWrap* wrap;
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+
+  CHECK_GT(args.Length(), 0);
+  if (!wrap->IsAlive())
+    return args.GetReturnValue().Set(UV_EINVAL);
+
+  wrap->flushable_ = args[0]->IsTrue();
+  args.GetReturnValue().Set(0);
+}
+
+
 int StreamWrap::DoShutdown(ShutdownWrap* req_wrap) {
   int err;
   err = uv_shutdown(req_wrap->req(), stream(), AfterShutdown);
@@ -351,12 +383,77 @@ int StreamWrap::DoTryWrite(uv_buf_t** bufs, size_t* count) {
 }
 
 
+int StreamWrap::Flush() {
+  CHECK(flushable_);
+  flushable_ = false;
+  uv_stream_set_blocking(stream(), true);
+
+  if (pending_ == nullptr)
+    return 0;
+
+  int err = DoWrite(pending_,
+                    write_queue_.data(),
+                    write_queue_.size(),
+                    nullptr);
+  AfterWrite(pending_->req(), err);
+  return err;
+}
+
+
+int StreamWrap::DoWritesFromQueue() {
+  uv_buf_t* vbufs = write_queue_.data();
+  size_t vcount = write_queue_.size();
+
+  int err = DoTryWrite(&vbufs, &vcount);
+  UpdateWriteQueueSize();
+
+  if (vcount == 0 || (err != 0 && err != UV_EAGAIN)) {
+    WriteWrap* req_wrap = pending_;
+
+    AfterWrite(req_wrap->req(), err);
+    return err;
+  }
+
+  // Reset the queue to contain all remaining data.
+  write_queue_ = std::vector<uv_buf_t>(vbufs, vbufs + vcount);
+
+  uv_buf_t dummy = uv_buf_init(nullptr, 0);
+  uv_write(pending_->req(), stream(), &dummy, 1,
+           [](uv_write_t* req, int status) {
+    WriteWrap* req_wrap = WriteWrap::from_req(req);
+    CHECK_NE(req_wrap, nullptr);
+    StreamWrap* that = req_wrap->target_wrap()->Cast<StreamWrap>();
+    CHECK_EQ(req_wrap, that->pending_);
+
+    if (status != 0) {
+      return AfterWrite(req, status);
+    }
+
+    that->DoWritesFromQueue();
+  });
+  return err;
+}
+
+
+int StreamWrap::FlushableWrite(WriteWrap* w, uv_buf_t* bufs, size_t count) {
+  CHECK_EQ(pending_, nullptr);
+  CHECK(write_queue_.empty());
+  write_queue_ = std::vector<uv_buf_t>(bufs, bufs + count);
+  pending_ = w;
+  w->Dispatched();
+  return DoWritesFromQueue();
+}
+
+
 int StreamWrap::DoWrite(WriteWrap* w,
                         uv_buf_t* bufs,
                         size_t count,
                         uv_stream_t* send_handle) {
+  CHECK_EQ(w->target_wrap()->Cast<StreamWrap>(), this);
   int r;
-  if (send_handle == nullptr) {
+  if (flushable_) {
+    r = FlushableWrite(w, bufs, count);
+  } else if (send_handle == nullptr) {
     r = uv_write(w->req(), stream(), bufs, count, AfterWrite);
   } else {
     r = uv_write2(w->req(), stream(), bufs, count, send_handle, AfterWrite);
@@ -383,6 +480,18 @@ int StreamWrap::DoWrite(WriteWrap* w,
 void StreamWrap::AfterWrite(uv_write_t* req, int status) {
   WriteWrap* req_wrap = WriteWrap::from_req(req);
   CHECK_NE(req_wrap, nullptr);
+  StreamWrap* wrap = req_wrap->target_wrap()->Cast<StreamWrap>();
+  CHECK_NE(wrap, nullptr);
+
+  if (wrap->pending_ != nullptr) {
+    CHECK(wrap->flushable_);
+    CHECK_EQ(wrap->pending_, req_wrap);
+    wrap->pending_ = nullptr;
+    wrap->write_queue_.clear();
+  } else {
+    CHECK(wrap->write_queue_.empty());
+  }
+
   HandleScope scope(req_wrap->env()->isolate());
   Context::Scope context_scope(req_wrap->env()->context());
   req_wrap->Done(status);

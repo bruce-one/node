@@ -31,6 +31,8 @@
 #include "string_bytes.h"
 #include "v8.h"
 
+#include <vector>
+
 namespace node {
 
 // Forward declaration
@@ -95,6 +97,8 @@ class StreamWrap : public HandleWrap, public StreamBase {
 
  private:
   static void SetBlocking(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void Flush(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void SetFlushable(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Callbacks for libuv
   static void OnAlloc(uv_handle_t* handle,
@@ -119,7 +123,15 @@ class StreamWrap : public HandleWrap, public StreamBase {
                          uv_handle_type pending,
                          void* ctx);
 
+  int FlushableWrite(WriteWrap* w, uv_buf_t* bufs, size_t count);
+  int Flush();
+  int DoWritesFromQueue();
+
   uv_stream_t* const stream_;
+
+  bool flushable_ = false;
+  WriteWrap* pending_ = nullptr;
+  std::vector<uv_buf_t> write_queue_;
 };
 
 

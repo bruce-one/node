@@ -143,13 +143,15 @@ void StreamBase::JSMethod(const FunctionCallbackInfo<Value>& args) {
 
 WriteWrap* WriteWrap::New(Environment* env,
                           Local<Object> obj,
-                          StreamBase* wrap,
+                          StreamBase* target_wrap,
+                          StreamBase* orig_wrap,
                           DoneCb cb,
                           size_t extra) {
   size_t storage_size = ROUND_UP(sizeof(WriteWrap), kAlignSize) + extra;
   char* storage = new char[storage_size];
 
-  return new(storage) WriteWrap(env, obj, wrap, cb, storage_size);
+  return new(storage) WriteWrap(
+      env, obj, target_wrap, orig_wrap, cb, storage_size);
 }
 
 

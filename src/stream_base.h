@@ -74,12 +74,14 @@ class WriteWrap: public ReqWrap<uv_write_t>,
   static inline WriteWrap* New(Environment* env,
                                v8::Local<v8::Object> obj,
                                StreamBase* wrap,
+                               StreamBase* orig_wrap,
                                DoneCb cb,
                                size_t extra = 0);
   inline void Dispose();
   inline char* Extra(size_t offset = 0);
 
-  inline StreamBase* wrap() const { return wrap_; }
+  inline StreamBase* target_wrap() const { return target_wrap_; }
+  inline StreamBase* orig_wrap() const { return orig_wrap_; }
 
   size_t self_size() const override { return storage_size_; }
 
@@ -92,12 +94,14 @@ class WriteWrap: public ReqWrap<uv_write_t>,
  protected:
   WriteWrap(Environment* env,
             v8::Local<v8::Object> obj,
-            StreamBase* wrap,
+            StreamBase* target_wrap,
+            StreamBase* orig_wrap,
             DoneCb cb,
             size_t storage_size)
       : ReqWrap(env, obj, AsyncWrap::PROVIDER_WRITEWRAP),
         StreamReq<WriteWrap>(cb),
-        wrap_(wrap),
+        target_wrap_(target_wrap),
+        orig_wrap_(orig_wrap),
         storage_size_(storage_size) {
     Wrap(obj, this);
   }
@@ -118,7 +122,8 @@ class WriteWrap: public ReqWrap<uv_write_t>,
   // WriteWrap. Ensure this never happens.
   void operator delete(void* ptr) { UNREACHABLE(); }
 
-  StreamBase* const wrap_;
+  StreamBase* const target_wrap_;
+  StreamBase* const orig_wrap_;
   const size_t storage_size_;
 };
 
