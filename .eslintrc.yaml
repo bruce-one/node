@@ -169,6 +169,7 @@ rules:
 
   # Custom rules in tools/eslint-rules
   assert-throws-arguments: [error, { requireTwo: true }]
+  assert-no-message-literals: error
   no-unescaped-regexp-dot: error
 
 # Global scoped method and vars
