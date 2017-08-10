@@ -1126,7 +1126,7 @@ Headers::Headers(Isolate* isolate,
       return;
     }
 
-    nva[n].flags = NGHTTP2_NV_FLAG_NONE;
+    nva[n].flags = *(p++);
     nva[n].name = reinterpret_cast<uint8_t*>(p);
     nva[n].namelen = strlen(p);
     p += nva[n].namelen + 1;
