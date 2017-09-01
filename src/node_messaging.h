@@ -28,12 +28,12 @@ enum MessageFlag {
   // Inform the receiving message port that the peer’s thread has been stopped.
   kMessageFlagThreadStopped = 2,
 
+  // This is the threshold up to which the MessagePort implementation passes the
+  // messages to a FlaggedMessageListener rather than emitting it to JS land.
   kMessageFlagMaxHandledInternally = 2,
 
   // Generic offset for use by the JS core modules.
   kMessageFlagCustomOffset = 100
-
-  // Any further flagged message codes are defined by the modules that use them.
 };
 
 // Represents a single communication message. The only non-standard extension
