@@ -87,6 +87,7 @@ class ProcessWrap : public HandleWrap {
                    object,
                    reinterpret_cast<uv_handle_t*>(&process_),
                    AsyncWrap::PROVIDER_PROCESSWRAP) {
+    MarkAsUninitialized();
   }
 
   static void ParseStdioOptions(Environment* env,
@@ -255,6 +256,7 @@ class ProcessWrap : public HandleWrap {
     }
 
     int err = uv_spawn(env->event_loop(), &wrap->process_, &options);
+    wrap->MarkAsInitialized();
 
     if (err == 0) {
       CHECK_EQ(wrap->process_.data, wrap);
