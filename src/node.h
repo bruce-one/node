@@ -485,6 +485,8 @@ typedef void (*addon_context_register_func)(
     v8::Local<v8::Context> context,
     void* priv);
 
+#define NM_F_WORKER_ENABLED  (1 << 3)
+
 struct node_module {
   int nm_version;
   unsigned int nm_flags;
@@ -571,6 +573,11 @@ extern "C" NODE_EXTERN void node_module_register(void* mod);
 #define NODE_MODULE_CONTEXT_AWARE(modname, regfunc)                   \
   /* NOLINTNEXTLINE (readability/null_usage) */                       \
   NODE_MODULE_CONTEXT_AWARE_X(modname, regfunc, NULL, 0)
+
+#define NODE_MODULE_WORKER_ENABLED(modname, regfunc)                  \
+  /* NOLINTNEXTLINE (readability/null_usage) */                       \
+  NODE_MODULE_CONTEXT_AWARE_X(modname, regfunc, NULL,                 \
+                              NM_F_WORKER_ENABLED)
 
 /*
  * For backward compatibility in add-on modules.

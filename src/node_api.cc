@@ -888,6 +888,8 @@ void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
 
 // Registers a NAPI module.
 void napi_module_register(napi_module* mod) {
+  static_assert(NAPI_F_WORKER_ENABLED == NM_F_WORKER_ENABLED,
+                "Worker-enabled flags match for N-API and Node");
   node::node_module* nm = new node::node_module {
     -1,
     mod->nm_flags,

@@ -284,7 +284,9 @@ Notable differences inside a Worker environment are:
 - [`process.env`][] is a read-only reference to the environment variables.
 - [`process.title`][] can not be modified.
 - Signals will not be delivered through [`process.on('...')`][Signals events].
-- Native addons are not supported.
+- Native addons need to explicitly signal that they provide Worker support
+  by using `NODE_MODULE_WORKER_ENABLED` rather than `NODE_MODULE`,
+  or `NAPI_MODULE_WORKER_ENABLED` rather than `NAPI_MODULE`.
 - Execution may stop at any point as a result of the [`worker.terminate()`][]
   method being invoked.
 - The [`inspector`][] module is not available.

@@ -62,7 +62,10 @@ enum {
   NM_F_BUILTIN  = 1 << 0,
   NM_F_LINKED   = 1 << 1,
   NM_F_INTERNAL = 1 << 2,
+  NM_F_WORKER_ENABLED_INTERNAL = 1 << 3,
 };
+
+static_assert(NM_F_WORKER_ENABLED_INTERNAL == NM_F_WORKER_ENABLED);
 
 struct sockaddr;
 

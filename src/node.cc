@@ -2197,7 +2197,17 @@ node_module* get_linked_module(const char* name) {
   return FindModule(modlist_linked, name, NM_F_LINKED);
 }
 
-struct DLib {
+namespace {
+
+Mutex dlib_mutex;
+
+struct DLib;
+
+std::unordered_map<std::string, std::shared_ptr<DLib>> dlopen_cache;
+std::unordered_map<decltype(uv_lib_t().handle), std::shared_ptr<DLib>>
+    handle_to_dlib;
+
+struct DLib : public std::enable_shared_from_this<DLib> {
 #ifdef __POSIX__
   static const int kDefaultFlags = RTLD_LAZY;
 #else
@@ -2207,18 +2217,28 @@ struct DLib {
   inline DLib(const char* filename, int flags)
       : filename_(filename), flags_(flags), handle_(nullptr) {}
 
+  inline DLib() {}
+  inline ~DLib() {
+    Close();
+  }
+
   inline bool Open();
   inline void Close();
   inline void* GetSymbolAddress(const char* name);
+  inline void AddEnvironment(Environment* env);
 
-  const std::string filename_;
-  const int flags_;
+  std::string filename_;
+  int flags_;
   std::string errmsg_;
-  void* handle_;
+  void* handle_ = nullptr;
+  std::unordered_set<Environment*> users_;
+  node_module* own_info = nullptr;
+
 #ifndef __POSIX__
   uv_lib_t lib_;
 #endif
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(DLib);
 };
 
@@ -2282,28 +2302,44 @@ inline napi_addon_register_func GetNapiInitializerCallback(DLib* dlib) {
       reinterpret_cast<napi_addon_register_func>(dlib->GetSymbolAddress(name));
 }
 
+void DLib::AddEnvironment(Environment* env) {
+  if (users_.count(env) > 0) return;
+  users_.insert(env);
+  if (env->is_main_thread()) return;
+  struct cleanup_hook_data {
+    std::shared_ptr<DLib> info;
+    Environment* env;
+  };
+  env->AddCleanupHook([](void* arg) {
+    Mutex::ScopedLock lock(dlib_mutex);
+    cleanup_hook_data* cbdata = static_cast<cleanup_hook_data*>(arg);
+    std::shared_ptr<DLib> info = cbdata->info;
+    info->users_.erase(cbdata->env);
+    delete cbdata;
+    if (info->users_.empty()) {
+      std::vector<std::string> filenames;
+
+      for (const auto& entry : dlopen_cache) {
+        if (entry.second == info)
+          filenames.push_back(entry.first);
+      }
+      for (const std::string& filename : filenames)
+        dlopen_cache.erase(filename);
+
+      handle_to_dlib.erase(info->handle_);
+    }
+  }, static_cast<void*>(new cleanup_hook_data { shared_from_this(), env }));
+}
+
+}  // anonymous namespace
+
 // DLOpen is process.dlopen(module, filename, flags).
 // Used to load 'module.node' dynamically shared objects.
-//
-// FIXME(bnoordhuis) Not multi-context ready. TBD how to resolve the conflict
-// when two contexts try to load the same shared object. Maybe have a shadow
-// cache that's a plain C list or hash table that's shared across contexts?
 static void DLOpen(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  auto context = env->context();
-
-  CHECK_EQ(modpending, nullptr);
-
-  if (args.Length() < 2) {
-    env->ThrowError("process.dlopen needs at least 2 arguments.");
-    return;
-  }
-
-  int32_t flags = DLib::kDefaultFlags;
-  if (args.Length() > 2 && !args[2]->Int32Value(context).To(&flags)) {
-    return env->ThrowTypeError("flag argument must be an integer.");
-  }
-
+  Local<Context> context = env->context();
+  node_module* mp;
+  std::shared_ptr<DLib> dlib;
   Local<Object> module;
   Local<Object> exports;
   Local<Value> exports_v;
@@ -2313,82 +2349,132 @@ static void DLOpen(const FunctionCallbackInfo<Value>& args) {
     return;  // Exception pending.
   }
 
-  node::Utf8Value filename(env->isolate(), args[1]);  // Cast
-  DLib dlib(*filename, flags);
-  bool is_opened = dlib.Open();
+  do {
+    Mutex::ScopedLock lock(dlib_mutex);
+    CHECK_EQ(modpending, nullptr);
 
-  // Objects containing v14 or later modules will have registered themselves
-  // on the pending list.  Activate all of them now.  At present, only one
-  // module per object is supported.
-  node_module* const mp = modpending;
-  modpending = nullptr;
-
-  if (!is_opened) {
-    Local<String> errmsg = OneByteString(env->isolate(), dlib.errmsg_.c_str());
-    dlib.Close();
-#ifdef _WIN32
-    // Windows needs to add the filename into the error message
-    errmsg = String::Concat(errmsg,
-                            args[1]->ToString(context).ToLocalChecked());
-#endif  // _WIN32
-    env->isolate()->ThrowException(Exception::Error(errmsg));
-    return;
-  }
-
-  if (mp == nullptr) {
-    if (auto callback = GetInitializerCallback(&dlib)) {
-      callback(exports, module, context);
-    } else if (auto napi_callback = GetNapiInitializerCallback(&dlib)) {
-      napi_module_register_by_symbol(exports, module, context, napi_callback);
-    } else {
-      dlib.Close();
-      env->ThrowError("Module did not self-register.");
-    }
-    return;
-  }
-
-  // -1 is used for N-API modules
-  if ((mp->nm_version != -1) && (mp->nm_version != NODE_MODULE_VERSION)) {
-    // Even if the module did self-register, it may have done so with the wrong
-    // version. We must only give up after having checked to see if it has an
-    // appropriate initializer callback.
-    if (auto callback = GetInitializerCallback(&dlib)) {
-      callback(exports, module, context);
+    if (args.Length() < 2) {
+      env->ThrowError("process.dlopen needs at least 2 arguments.");
       return;
     }
-    char errmsg[1024];
-    snprintf(errmsg,
-             sizeof(errmsg),
-             "The module '%s'"
-             "\nwas compiled against a different Node.js version using"
-             "\nNODE_MODULE_VERSION %d. This version of Node.js requires"
-             "\nNODE_MODULE_VERSION %d. Please try re-compiling or "
-             "re-installing\nthe module (for instance, using `npm rebuild` "
-             "or `npm install`).",
-             *filename, mp->nm_version, NODE_MODULE_VERSION);
 
-    // NOTE: `mp` is allocated inside of the shared library's memory, calling
-    // `dlclose` will deallocate it
-    dlib.Close();
-    env->ThrowError(errmsg);
-    return;
-  }
-  if (mp->nm_flags & NM_F_BUILTIN) {
-    dlib.Close();
-    env->ThrowError("Built-in module self-registered.");
-    return;
-  }
+    int32_t flags = DLib::kDefaultFlags;
+    if (args.Length() > 2 && !args[2]->Int32Value(context).To(&flags)) {
+      return env->ThrowTypeError("flag argument must be an integer.");
+    }
 
-  mp->nm_dso_handle = dlib.handle_;
-  mp->nm_link = modlist_addon;
-  modlist_addon = mp;
+    node::Utf8Value filename(env->isolate(), args[1]);  // Cast
+    auto it = dlopen_cache.find(*filename);
+
+    if (it != dlopen_cache.end()) {
+      dlib = it->second;
+      mp = dlib->own_info;
+      dlib->AddEnvironment(env);
+      break;
+    }
+
+    dlib = std::make_shared<DLib>();
+    dlib->filename_ = *filename;
+    dlib->flags_ = flags;
+    bool is_opened = dlib->Open();
+
+    if (is_opened && handle_to_dlib.count(dlib->handle_) > 0) {
+      dlib = handle_to_dlib[dlib->handle_];
+      mp = dlib->own_info;
+      dlib->AddEnvironment(env);
+      break;
+    }
+
+    // Objects containing v14 or later modules will have registered themselves
+    // on the pending list.  Activate all of them now.  At present, only one
+    // module per object is supported.
+    mp = modpending;
+    modpending = nullptr;
+
+    if (!is_opened) {
+      Local<String> errmsg =
+          OneByteString(env->isolate(), dlib->errmsg_.c_str());
+#ifdef _WIN32
+      // Windows needs to add the filename into the error message
+      errmsg = String::Concat(errmsg,
+                              args[1]->ToString(context).ToLocalChecked());
+#endif  // _WIN32
+      env->isolate()->ThrowException(Exception::Error(errmsg));
+      return;
+    }
+
+    if (mp == nullptr) {
+      if (auto callback = GetInitializerCallback(dlib.get())) {
+        callback(exports, module, context);
+      } else if (auto napi_callback = GetNapiInitializerCallback(dlib.get())) {
+        napi_module_register_by_symbol(exports, module, context, napi_callback);
+      } else {
+        dlib->Close();
+        env->ThrowError("Module did not self-register.");
+      }
+      return;
+    }
+
+    // -1 is used for N-API modules
+    if ((mp->nm_version != -1) && (mp->nm_version != NODE_MODULE_VERSION)) {
+      // Even if the module did self-register, it may have done so with the
+      // wrong version. We must only give up after having checked to see if it
+      // has an appropriate initializer callback.
+      if (auto callback = GetInitializerCallback(dlib.get())) {
+        callback(exports, module, context);
+        return;
+      }
+      char errmsg[1024];
+      snprintf(errmsg,
+               sizeof(errmsg),
+               "The module '%s'"
+               "\nwas compiled against a different Node.js version using"
+               "\nNODE_MODULE_VERSION %d. This version of Node.js requires"
+               "\nNODE_MODULE_VERSION %d. Please try re-compiling or "
+               "re-installing\nthe module (for instance, using `npm rebuild` "
+               "or `npm install`).",
+               *filename, mp->nm_version, NODE_MODULE_VERSION);
+
+      // NOTE: `mp` is allocated inside of the shared library's memory,
+      // calling `dlclose` will deallocate it
+      env->ThrowError(errmsg);
+      return;
+    }
+
+    if (mp->nm_flags & NM_F_BUILTIN) {
+      env->ThrowError("Built-in module self-registered.");
+      return;
+    }
+
+    if (!env->is_main_thread() && !(mp->nm_flags & NM_F_WORKER_ENABLED)) {
+      env->ThrowError("Native modules need to explicitly indicate multi-"
+                      "isolate/multi-thread support by using "
+                      "`NODE_MODULE_WORKER_ENABLED` or "
+                      "`NAPI_MODULE_WORKER_ENABLED` to register themselves.");
+      return;
+    }
+    if (mp->nm_context_register_func == nullptr &&
+        mp->nm_register_func == nullptr) {
+      env->ThrowError("Module has no declared entry point.");
+      return;
+    }
+
+    dlib->own_info = mp;
+    handle_to_dlib[dlib->handle_] = dlib;
+    dlopen_cache[*filename] = dlib;
+
+    dlib->AddEnvironment(env);
+
+    mp->nm_dso_handle = dlib->handle_;
+    mp->nm_link = modlist_addon;
+    modlist_addon = mp;
+  } while (false);
 
   if (mp->nm_context_register_func != nullptr) {
     mp->nm_context_register_func(exports, module, context, mp->nm_priv);
   } else if (mp->nm_register_func != nullptr) {
     mp->nm_register_func(exports, module, mp->nm_priv);
   } else {
-    dlib.Close();
     env->ThrowError("Module has no declared entry point.");
     return;
   }

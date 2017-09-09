@@ -73,6 +73,8 @@ typedef struct {
 #define EXTERN_C_END
 #endif
 
+#define NAPI_F_WORKER_ENABLED (1 << 3)
+
 #define NAPI_MODULE_X(modname, regfunc, priv, flags)                  \
   EXTERN_C_START                                                      \
     static napi_module _module =                                      \
@@ -111,6 +113,10 @@ typedef struct {
   NAPI_MODULE(NODE_GYP_MODULE_NAME, NAPI_MODULE_INITIALIZER)          \
   napi_value NAPI_MODULE_INITIALIZER(napi_env env,                    \
                                      napi_value exports)
+
+#define NAPI_MODULE_WORKER_ENABLED(modname, regfunc)                  \
+  /* NOLINTNEXTLINE (readability/null_usage) */                       \
+  NAPI_MODULE_X(modname, regfunc, NULL, NAPI_F_WORKER_ENABLED)
 
 #define NAPI_AUTO_LENGTH SIZE_MAX
 
