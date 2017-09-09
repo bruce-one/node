@@ -890,6 +890,53 @@ If still valid, this API returns the `napi_value` representing the
 JavaScript Object associated with the `napi_ref`. Otherwise, result
 will be NULL.
 
+### Cleanup on exit of the current Node.js instance
+
+While a Node.js typically releases all its resources when exiting, embedders
+of Node.js, or future Worker support, may require addons to register
+clean-up hooks that will be run once the current Node.js instance exits.
+
+N-API provides functions for registering and un-registering such callbacks.
+When those callbacks are run, all resources that are being held by the addon
+should be freed up.
+
+#### napi_add_env_cleanup_hook
+<!-- YAML
+added: REPLACEME
+-->
+```C
+NODE_EXTERN napi_status napi_add_env_cleanup_hook(napi_env env,
+                                                  void (*fun)(void* arg),
+                                                  void* arg);
+```
+
+Registers `fun` as a function to be run with the `arg` parameter once the
+current Node.js environment exits.
+
+A function can safely be specified multiple times with different
+`arg` values. In that case, it will be called multiple times as well.
+
+Removing this hook can be done by using `napi_remove_env_cleanup_hook`.
+Typically, that happens when the resource for which this hook was added
+is being torn down anyway.
+
+#### napi_remove_env_cleanup_hook
+<!-- YAML
+added: REPLACEME
+-->
+```C
+NAPI_EXTERN napi_status napi_remove_env_cleanup_hook(napi_env env,
+                                                     void (*fun)(void* arg),
+                                                     void* arg);
+```
+
+Un-registers `fun` as a function to be run with the `arg` parameter once the
+current Node.js environment exits. Both the argument and the function value
+need to be exact matches.
+
+The function must have originally been registered
+with `napi_add_env_cleanup_hook`.
+
 ## Module registration
 N-API modules are registered in a manner similar to other modules
 except that instead of using the `NODE_MODULE` macro the following
