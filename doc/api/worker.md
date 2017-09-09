@@ -154,7 +154,10 @@ added: REPLACEME
 Instances of the `worker.MessagePort` class represent one end of an
 asynchronous, two-way communications channel. It can be used to transfer
 structured data, memory regions and other `MessagePort`s between different
-[`Worker`][]s.
+[`Worker`][]s or [`vm` context][vm]s.
+
+For transferring `MessagePort` instances between VM contexts, see
+[`vm.moveMessagePortToContext()`][].
 
 *Note*: With the exception of `MessagePort`s being [`EventEmitter`][]s rather
 than `EventTarget`s, this implementation matches [browser `MessagePort`][]s.
@@ -260,7 +263,9 @@ added: REPLACEME
 
 Starts receiving messages on this `MessagePort`. When using this port
 as an event emitter, this will be called automatically once `'message'`
-listeners are attached.
+listeners are attached. This means that this method does not need to be used
+unless you are using [`vm.moveMessagePortToContext()`][] to move this `port`
+into another VM context.
 
 ## Class: Worker
 <!-- YAML
@@ -449,6 +454,8 @@ it is available as [`require('worker').threadId`][].
 [`require('worker').postMessage()`]: #worker_worker_postmessage_value_transferlist
 [`require('worker').isMainThread`]: #worker_worker_is_main_thread
 [`require('worker').threadId`]: #worker_worker_threadid
+[`vm.moveMessagePortToContext()`]: vm.html#vm_vm_movemessageporttocontext_port_context
+[vm]: vm.html#vm_vm_executing_javascript
 [`cluster` module]: cluster.html
 [`inspector`]: inspector.html
 [v8.serdes]: v8.html#v8_serialization_api

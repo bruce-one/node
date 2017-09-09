@@ -26,9 +26,6 @@
 #include "node_contextify.h"
 #include "node_context_data.h"
 
-namespace node {
-namespace contextify {
-
 using v8::Array;
 using v8::ArrayBuffer;
 using v8::Boolean;
@@ -65,6 +62,9 @@ using v8::UnboundScript;
 using v8::Value;
 using v8::WeakCallbackInfo;
 using v8::WeakCallbackType;
+
+namespace node {
+namespace contextify {
 
 // The vm module executes code in a sandboxed environment with a different
 // global object than the rest of the code. This is achieved by applying
@@ -938,6 +938,20 @@ void Initialize(Local<Object> target,
 }
 
 }  // namespace contextify
+
+MaybeLocal<Context> ContextFromContextifiedSandbox(
+    Environment* env,
+    Local<Object> sandbox) {
+  using contextify::ContextifyContext;
+  ContextifyContext* contextify_context =
+      ContextifyContext::ContextFromContextifiedSandbox(env, sandbox);
+
+  if (contextify_context == nullptr)
+    return MaybeLocal<Context>();
+  else
+    return contextify_context->context();
+}
+
 }  // namespace node
 
 NODE_BUILTIN_MODULE_CONTEXT_AWARE(contextify, node::contextify::Initialize)

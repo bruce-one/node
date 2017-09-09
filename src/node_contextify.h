@@ -98,6 +98,11 @@ class ContextifyContext {
 };
 
 }  // namespace contextify
+
+v8::MaybeLocal<v8::Context> ContextFromContextifiedSandbox(
+    Environment* env,
+    v8::Local<v8::Object> sandbox);
+
 }  // namespace node
 
 #endif  // SRC_NODE_CONTEXTIFY_H_
