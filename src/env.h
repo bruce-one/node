@@ -128,7 +128,8 @@ struct PackageConfig {
   V(chunks_sent_since_last_write_string, "chunksSentSinceLastWrite")          \
   V(constants_string, "constants")                                            \
   V(oncertcb_string, "oncertcb")                                              \
-  V(onclose_string, "_onclose")                                               \
+  V(_onclose_string, "_onclose")                                              \
+  V(onclose_string, "onclose")                                                \
   V(code_string, "code")                                                      \
   V(cwd_string, "cwd")                                                        \
   V(dest_string, "dest")                                                      \
