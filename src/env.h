@@ -670,6 +670,9 @@ class Environment {
                               const char* path = nullptr,
                               const char* dest = nullptr);
 
+  inline bool can_call_into_js() const;
+  inline void set_can_call_into_js(bool can_call_into_js);
+
   inline void ThrowError(const char* errmsg);
   inline void ThrowTypeError(const char* errmsg);
   inline void ThrowRangeError(const char* errmsg);
@@ -808,6 +811,8 @@ class Environment {
   int should_not_abort_scope_counter_ = 0;
 
   std::unique_ptr<performance::performance_state> performance_state_;
+  bool can_call_into_js_ = true;
+
   std::map<std::string, uint64_t> performance_marks_;
 
 #if HAVE_INSPECTOR
