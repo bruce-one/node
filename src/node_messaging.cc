@@ -41,13 +41,26 @@ namespace {
 // `MessagePort`s and `SharedArrayBuffer`s, and make new JS objects out of them.
 class DeserializerDelegate : public ValueDeserializer::Delegate {
  public:
-  DeserializerDelegate(Message* m, Environment* env)
-    : env_(env), msg_(m) {}
+  DeserializerDelegate(Message* m,
+                       Environment* env,
+                       const std::vector<MessagePort*>& message_ports)
+    : env_(env), msg_(m), message_ports_(message_ports) {}
+
+  MaybeLocal<Object> ReadHostObject(Isolate* isolate) override {
+    // Currently, only MessagePort hosts objects are supported, so identifying
+    // by the index in the message's MessagePort array is sufficient.
+    uint32_t id;
+    if (!deserializer->ReadUint32(&id))
+      return MaybeLocal<Object>();
+    CHECK_LE(id, message_ports_.size());
+    return message_ports_[id]->object();
+  };
 
   ValueDeserializer* deserializer = nullptr;
  private:
   Environment* env_;
   Message* msg_;
+  const std::vector<MessagePort*>& message_ports_;
 };
 
 }  // anonymous namespace
@@ -57,7 +70,18 @@ MaybeLocal<Value> Message::Deserialize(Environment* env,
   EscapableHandleScope handle_scope(env->isolate());
   Context::Scope context_scope(context);
 
-  DeserializerDelegate delegate(this, env);
+  // Create all necessary MessagePort handles.
+  std::vector<MessagePort*> ports(message_ports_.size());
+  for (uint32_t i = 0; i < message_ports_.size(); ++i) {
+    ports[i] = MessagePort::New(env,
+                                context,
+                                std::move(message_ports_[i]));
+    if (ports[i] == nullptr)
+      return MaybeLocal<Value>();
+  }
+  message_ports_.clear();
+
+  DeserializerDelegate delegate(this, env, ports);
   ValueDeserializer deserializer(
       env->isolate(),
       reinterpret_cast<const uint8_t*>(main_message_buf_.data),
@@ -82,6 +106,10 @@ MaybeLocal<Value> Message::Deserialize(Environment* env,
       deserializer.ReadValue(context).FromMaybe(Local<Value>()));
 }
 
+void Message::AddMessagePort(std::unique_ptr<MessagePortData>&& data) {
+  message_ports_.emplace_back(std::move(data));
+}
+
 namespace {
 
 class SerializerDelegate : public ValueSerializer::Delegate {
@@ -93,12 +121,41 @@ class SerializerDelegate : public ValueSerializer::Delegate {
     env_->isolate()->ThrowException(Exception::Error(message));
   }
 
+  Maybe<bool> WriteHostObject(Isolate* isolate, Local<Object> object) override {
+    if (env_->message_port_constructor_template()->HasInstance(object)) {
+      return WriteMessagePort(Unwrap<MessagePort>(object));
+    }
+
+    THROW_ERR_CANNOT_TRANSFER_OBJECT(env_);
+    return Nothing<bool>();
+  }
+
+  void Finish() {
+    for (MessagePort* port : ports_) {
+      port->Close();
+      msg_->AddMessagePort(port->Detach());
+    }
+  }
+
   ValueSerializer* serializer = nullptr;
 
  private:
+  Maybe<bool> WriteMessagePort(MessagePort* port) {
+    for (uint32_t i = 0; i < ports_.size(); i++) {
+      if (ports_[i] == port) {
+        serializer->WriteUint32(i);
+        return Just(true);
+      }
+    }
+
+    THROW_ERR_MISSING_MESSAGE_PORT_IN_TRANSFER_LIST(env_);
+    return Nothing<bool>();
+  }
+
   Environment* env_;
   Local<Context> context_;
   Message* msg_;
+  std::vector<MessagePort*> ports_;
 
   friend class worker::Message;
 };
@@ -124,7 +181,7 @@ Maybe<bool> Message::Serialize(Environment* env,
       Local<Value> entry;
       if (!transfer_list->Get(context, i).ToLocal(&entry))
         return Nothing<bool>();
-      // Currently, we support ArrayBuffers.
+      // Currently, we support ArrayBuffers and MessagePorts.
       if (entry->IsArrayBuffer()) {
         Local<ArrayBuffer> ab = entry.As<ArrayBuffer>();
         if (!ab->IsNeuterable() || ab->IsExternal())
@@ -132,6 +189,12 @@ Maybe<bool> Message::Serialize(Environment* env,
         uint32_t id = array_buffers.size();
         array_buffers.push_back(ab);
         serializer.TransferArrayBuffer(id, ab);
+        continue;
+      } else if (env->message_port_constructor_template()
+                    ->HasInstance(entry)) {
+        MessagePort* port = Unwrap<MessagePort>(entry.As<Object>());
+        CHECK_NE(port, nullptr);
+        delegate.ports_.push_back(port);
         continue;
       }
 
@@ -153,6 +216,7 @@ Maybe<bool> Message::Serialize(Environment* env,
                                contents.ByteLength() });
   }
 
+  delegate.Finish();
   std::pair<uint8_t*, size_t> data = serializer.Release();
   main_message_buf_ =
       MallocedBuffer<char>(reinterpret_cast<char*>(data.first), data.second);
