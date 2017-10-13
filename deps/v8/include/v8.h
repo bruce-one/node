@@ -1729,12 +1729,12 @@ class V8_EXPORT StackFrame {
 enum StateTag {
   JS,
   GC,
-  PARSER,
   BYTECODE_COMPILER,
   COMPILER,
   OTHER,
   EXTERNAL,
-  IDLE
+  IDLE,
+  PARSER
 };
 
 // A RegisterState represents the current state of registers used
