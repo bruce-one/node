@@ -400,10 +400,10 @@ static void DisablePromiseHook(const FunctionCallbackInfo<Value>& args) {
 
   // Delay the call to `RemovePromiseHook` because we might currently be
   // between the `before` and `after` calls of a Promise.
-  env->isolate()->EnqueueMicrotask([](void* data) {
-    Environment* env = static_cast<Environment*>(data);
-    env->RemovePromiseHook(PromiseHook, data);
-  }, static_cast<void*>(env));
+  /*env->isolate()->EnqueueMicrotask([](void* data) {*/
+//    Environment* env = static_cast<Environment*>(data);
+    env->RemovePromiseHook(PromiseHook, static_cast<void*>(env));
+  /*}, static_cast<void*>(env));*/
 }
 
 
