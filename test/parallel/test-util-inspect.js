@@ -26,6 +26,12 @@ const JSStream = process.binding('js_stream').JSStream;
 const util = require('util');
 const vm = require('vm');
 
+Object.prototype.toString = () => { throw new Error(); };
+Object.getOwnPropertyDescriptor = () => { throw new Error(); };
+Object.getOwnPropertyNames = () => { throw new Error(); };
+Object.getOwnPropertySymbols = () => { throw new Error(); };
+String.prototype.replace = () => { throw new Error(); };
+
 /* eslint-disable accessor-pairs */
 
 assert.strictEqual(util.inspect(1), '1');

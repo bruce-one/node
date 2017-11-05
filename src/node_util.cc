@@ -14,25 +14,32 @@ using v8::Object;
 using v8::Private;
 using v8::Promise;
 using v8::Proxy;
+using v8::String;
 using v8::Value;
 
 
 #define VALUE_METHOD_MAP(V)                                                   \
+  V(isArray, IsArray)                                                         \
   V(isArrayBuffer, IsArrayBuffer)                                             \
-  V(isArrayBufferView, IsArrayBufferView)                                     \
   V(isAsyncFunction, IsAsyncFunction)                                         \
+  V(isBooleanObject, IsBooleanObject)                                         \
   V(isDataView, IsDataView)                                                   \
   V(isDate, IsDate)                                                           \
   V(isExternal, IsExternal)                                                   \
   V(isMap, IsMap)                                                             \
   V(isMapIterator, IsMapIterator)                                             \
   V(isNativeError, IsNativeError)                                             \
+  V(isNumberObject, IsNumberObject)                                           \
   V(isPromise, IsPromise)                                                     \
   V(isRegExp, IsRegExp)                                                       \
   V(isSet, IsSet)                                                             \
   V(isSetIterator, IsSetIterator)                                             \
+  V(isSharedArrayBuffer, IsSharedArrayBuffer)                                 \
+  V(isStringObject, IsStringObject)                                           \
+  V(isSymbolObject, IsSymbolObject)                                           \
   V(isTypedArray, IsTypedArray)                                               \
-  V(isUint8Array, IsUint8Array)
+  V(isUint8Array, IsUint8Array)                                               \
+  V(isArrayBufferView, IsArrayBufferView)                                     \
 
 
 #define V(_, ucname) \
@@ -50,20 +57,45 @@ static void IsAnyArrayBuffer(const FunctionCallbackInfo<Value>& args) {
     args[0]->IsArrayBuffer() || args[0]->IsSharedArrayBuffer());
 }
 
+static void GetValueKind(const FunctionCallbackInfo<Value>& args) {
+  const char* name;
+  Local<Value> arg = args[0];
+  while (arg->IsProxy()) {
+    arg = arg.As<Proxy>()->GetTarget();
+  }
+
+  do {
+#define V(_, ucname) if (arg->ucname()) { name = #ucname + 2; break; }
+
+    VALUE_METHOD_MAP(V)
+#undef V
+    return;
+  } while (false);
+
+  args.GetReturnValue().Set(
+      String::NewFromOneByte(args.GetIsolate(),
+                             reinterpret_cast<const uint8_t*>(name),
+                             v8::NewStringType::kInternalized,
+                             strlen(name)).ToLocalChecked());
+}
+
 static void GetPromiseDetails(const FunctionCallbackInfo<Value>& args) {
   // Return undefined if it's not a Promise.
   if (!args[0]->IsPromise())
     return;
 
-  auto isolate = args.GetIsolate();
+  Environment* env = Environment::GetCurrent(args);
+  Local<Context> context = env->context();
 
   Local<Promise> promise = args[0].As<Promise>();
-  Local<Array> ret = Array::New(isolate, 2);
+  Local<Array> ret = Array::New(env->isolate(), 2);
+  CHECK(ret->SetPrototype(context, Null(env->isolate())).FromJust());
 
   int state = promise->State();
-  ret->Set(0, Integer::New(isolate, state));
-  if (state != Promise::PromiseState::kPending)
-    ret->Set(1, promise->Result());
+  CHECK(ret->Set(context, 0, Integer::New(env->isolate(), state)).FromJust());
+  if (state != Promise::PromiseState::kPending) {
+    CHECK(ret->Set(context, 1, promise->Result()).FromJust());
+  }
 
   args.GetReturnValue().Set(ret);
 }
@@ -73,11 +105,14 @@ static void GetProxyDetails(const FunctionCallbackInfo<Value>& args) {
   if (!args[0]->IsProxy())
     return;
 
+  Environment* env = Environment::GetCurrent(args);
+  Local<Context> context = env->context();
   Local<Proxy> proxy = args[0].As<Proxy>();
 
-  Local<Array> ret = Array::New(args.GetIsolate(), 2);
-  ret->Set(0, proxy->GetTarget());
-  ret->Set(1, proxy->GetHandler());
+  Local<Array> ret = Array::New(env->isolate(), 2);
+  CHECK(ret->SetPrototype(context, Null(env->isolate())).FromJust());
+  CHECK(ret->Set(context, 0, proxy->GetTarget()).FromJust());
+  CHECK(ret->Set(context, 1, proxy->GetHandler()).FromJust());
 
   args.GetReturnValue().Set(ret);
 }
@@ -216,6 +251,7 @@ void Initialize(Local<Object> target,
   env->SetMethod(target, "setHiddenValue", SetHiddenValue);
   env->SetMethod(target, "getPromiseDetails", GetPromiseDetails);
   env->SetMethod(target, "getProxyDetails", GetProxyDetails);
+  env->SetMethod(target, "getValueKind", GetValueKind);
   env->SetMethod(target, "safeToString", SafeToString);
 
   env->SetMethod(target, "startSigintWatchdog", StartSigintWatchdog);
