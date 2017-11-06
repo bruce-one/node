@@ -6,6 +6,7 @@ const common = require('../common.js');
 const opts = {
   showHidden: { showHidden: true },
   colors: { colors: true },
+  noSideEffects: { allowSideEffects: false },
   none: undefined
 };
 const bench = common.createBenchmark(main, {
