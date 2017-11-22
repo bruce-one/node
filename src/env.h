@@ -426,22 +426,6 @@ class Environment {
     inline size_t stack_size();
     inline void clear_async_id_stack();  // Used in fatal exceptions.
 
-    // Used to propagate the trigger_async_id to the constructor of any newly
-    // created resources using RAII. Instead of needing to pass the
-    // trigger_async_id along with other constructor arguments.
-    class InitScope {
-     public:
-      InitScope() = delete;
-      explicit InitScope(Environment* env, double init_trigger_async_id);
-      ~InitScope();
-
-     private:
-      Environment* env_;
-      AliasedBuffer<double, v8::Float64Array> async_id_fields_ref_;
-
-      DISALLOW_COPY_AND_ASSIGN(InitScope);
-    };
-
    private:
     friend class Environment;  // So we can call the constructor.
     inline explicit AsyncHooks(v8::Isolate* isolate);

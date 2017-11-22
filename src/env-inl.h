@@ -170,23 +170,6 @@ inline void Environment::AsyncHooks::clear_async_id_stack() {
   async_id_fields_[kTriggerAsyncId] = 0;
 }
 
-inline Environment::AsyncHooks::InitScope::InitScope(
-    Environment* env, double init_trigger_async_id)
-        : env_(env),
-          async_id_fields_ref_(env->async_hooks()->async_id_fields()) {
-  if (env_->async_hooks()->fields()[AsyncHooks::kCheck] > 0) {
-    CHECK_GE(init_trigger_async_id, -1);
-  }
-  env->async_hooks()->push_async_ids(
-    async_id_fields_ref_[AsyncHooks::kExecutionAsyncId],
-    init_trigger_async_id);
-}
-
-inline Environment::AsyncHooks::InitScope::~InitScope() {
-  env_->async_hooks()->pop_async_id(
-    async_id_fields_ref_[AsyncHooks::kExecutionAsyncId]);
-}
-
 inline Environment::AsyncCallbackScope::AsyncCallbackScope(Environment* env)
     : env_(env) {
   env_->makecallback_cntr_++;
