@@ -665,7 +665,7 @@ void URLHost::ParseIPv6Host(const char* input, size_t length) {
     compress_pointer = piece_pointer;
   }
   while (ch != kEOL) {
-    if (piece_pointer > last_piece)
+    if (piece_pointer >= last_piece)
       return;
     if (ch == ':') {
       if (compress_pointer != nullptr)
