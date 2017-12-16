@@ -567,7 +567,7 @@ class Http2Stream : public AsyncWrap,
   int ReadStop() override;
 
   // Required for StreamBase
-  int DoShutdown(ShutdownWrap* req_wrap) override;
+  int DoShutdown() override;
 
   // Initiate a response on this stream.
   inline int SubmitResponse(nghttp2_nv* nva,
@@ -600,9 +600,6 @@ class Http2Stream : public AsyncWrap,
 
 
   inline void Close(int32_t code);
-
-  // Shutdown the writable side of the stream
-  inline void Shutdown();
 
   // Destroy this stream instance and free all held memory.
   inline void Destroy();

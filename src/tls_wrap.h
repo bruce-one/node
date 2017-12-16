@@ -65,7 +65,7 @@ class TLSWrap : public AsyncWrap,
   int ReadStart() override;
   int ReadStop() override;
 
-  int DoShutdown(ShutdownWrap* req_wrap) override;
+  int DoShutdown() override;
   int DoWrite(WriteWrap* w,
               uv_buf_t* bufs,
               size_t count,
@@ -118,6 +118,7 @@ class TLSWrap : public AsyncWrap,
 
   // Resource implementation
   void OnStreamAfterWrite(WriteWrap* w, int status) override;
+  void OnStreamAfterShutdown(int status) override;
   uv_buf_t OnStreamAlloc(size_t size) override;
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
 

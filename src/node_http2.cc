@@ -1842,21 +1842,16 @@ inline void Http2Stream::Close(int32_t code) {
   DEBUG_HTTP2STREAM2(this, "closed with code %d", code);
 }
 
-
-inline void Http2Stream::Shutdown() {
+int Http2Stream::DoShutdown() {
   CHECK(!this->IsDestroyed());
-  Http2Scope h2scope(this);
-  flags_ |= NGHTTP2_STREAM_FLAG_SHUT;
-  CHECK_NE(nghttp2_session_resume_data(session_->session(), id_),
-           NGHTTP2_ERR_NOMEM);
-  DEBUG_HTTP2STREAM(this, "writable side shutdown");
-}
-
-int Http2Stream::DoShutdown(ShutdownWrap* req_wrap) {
-  CHECK(!this->IsDestroyed());
-  req_wrap->Dispatched();
-  Shutdown();
-  req_wrap->Done(0);
+  {
+    Http2Scope h2scope(this);
+    flags_ |= NGHTTP2_STREAM_FLAG_SHUT;
+    CHECK_NE(nghttp2_session_resume_data(session_->session(), id_),
+             NGHTTP2_ERR_NOMEM);
+    DEBUG_HTTP2STREAM(this, "writable side shutdown");
+  }
+  AfterShutdown(0);
   return 0;
 }
 

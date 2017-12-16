@@ -3,7 +3,6 @@ require('../common');
 const assert = require('assert');
 const { TCP, constants: TCPConstants } = process.binding('tcp_wrap');
 const TCPConnectWrap = process.binding('tcp_wrap').TCPConnectWrap;
-const ShutdownWrap = process.binding('stream_wrap').ShutdownWrap;
 
 function makeConnection() {
   const client = new TCP(TCPConstants.SOCKET);
@@ -19,14 +18,12 @@ function makeConnection() {
     assert.strictEqual(true, readable);
     assert.strictEqual(true, writable);
 
-    const shutdownReq = new ShutdownWrap();
-    const err = client.shutdown(shutdownReq);
+    const err = client.shutdown();
     assert.strictEqual(err, 0);
 
-    shutdownReq.oncomplete = function(status, client_, req_) {
+    client.onaftershutdown = function(status) {
       assert.strictEqual(0, status);
-      assert.strictEqual(client, client_);
-      assert.strictEqual(shutdownReq, req_);
+      assert.strictEqual(client, this);
       shutdownCount++;
       client.close();
     };

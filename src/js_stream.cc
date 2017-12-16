@@ -83,22 +83,14 @@ int JSStream::ReadStop() {
 }
 
 
-int JSStream::DoShutdown(ShutdownWrap* req_wrap) {
+int JSStream::DoShutdown() {
   HandleScope scope(env()->isolate());
   Context::Scope context_scope(env()->context());
-
-  Local<Value> argv[] = {
-    req_wrap->object()
-  };
-
-  req_wrap->Dispatched();
 
   TryCatch try_catch(env()->isolate());
   Local<Value> value;
   int value_int = UV_EPROTO;
-  if (!MakeCallback(env()->onshutdown_string(),
-                    arraysize(argv),
-                    argv).ToLocal(&value) ||
+  if (!MakeCallback(env()->onshutdown_string(), 0, nullptr).ToLocal(&value) ||
       !value->Int32Value(env()->context()).To(&value_int)) {
     FatalException(env()->isolate(), try_catch);
   }
@@ -152,13 +144,24 @@ void JSStream::New(const FunctionCallbackInfo<Value>& args) {
 }
 
 
-template <class Wrap>
-void JSStream::Finish(const FunctionCallbackInfo<Value>& args) {
-  Wrap* w;
+void JSStream::FinishWrite(const FunctionCallbackInfo<Value>& args) {
+  WriteWrap* w;
   CHECK(args[0]->IsObject());
   ASSIGN_OR_RETURN_UNWRAP(&w, args[0].As<Object>());
 
   w->Done(args[1]->Int32Value());
+}
+
+
+void JSStream::FinishShutdown(const FunctionCallbackInfo<Value>& args) {
+  JSStream* wrap;
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+
+  Local<Context> context = args.GetIsolate()->GetCurrentContext();
+  int32_t status;
+  if (!args[0]->Int32Value(context).To(&status))
+    return;
+  wrap->AfterShutdown(status);
 }
 
 
@@ -207,8 +210,8 @@ void JSStream::Initialize(Local<Object> target,
 
   AsyncWrap::AddWrapMethods(env, t);
 
-  env->SetProtoMethod(t, "finishWrite", Finish<WriteWrap>);
-  env->SetProtoMethod(t, "finishShutdown", Finish<ShutdownWrap>);
+  env->SetProtoMethod(t, "finishWrite", FinishWrite);
+  env->SetProtoMethod(t, "finishShutdown", FinishShutdown);
   env->SetProtoMethod(t, "readBuffer", ReadBuffer);
   env->SetProtoMethod(t, "emitEOF", EmitEOF);
 

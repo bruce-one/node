@@ -15,6 +15,7 @@ namespace node {
 
 using v8::Array;
 using v8::Context;
+using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::HandleScope;
 using v8::Integer;
@@ -44,46 +45,69 @@ int StreamBase::ReadStopJS(const FunctionCallbackInfo<Value>& args) {
 }
 
 
-int StreamBase::Shutdown(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
+int StreamBase::ShutdownJS(const FunctionCallbackInfo<Value>& args) {
+  // TODO(addaleax): Ideally, this and all the other JS-accessible methods
+  // should somehow verify that the current listener is either the default
+  // one or the one installed by LibuvStreamWrap.
+  // (Alternatively, the LibuvStreamWrap special listener might be merged
+  // into the default one?)
+  return Shutdown();
+}
 
-  CHECK(args[0]->IsObject());
-  Local<Object> req_wrap_obj = args[0].As<Object>();
 
-  AsyncWrap* wrap = GetAsyncWrap();
-  CHECK_NE(wrap, nullptr);
-  AsyncHooks::DefaultTriggerAsyncIdScope(env, wrap->get_async_id());
-  ShutdownWrap* req_wrap = new ShutdownWrap(env,
-                                            req_wrap_obj,
-                                            this);
-
-  int err = DoShutdown(req_wrap);
-  if (err)
-    delete req_wrap;
+int AsyncTrackingStream::Shutdown() {
+  StartAsyncOperation(AsyncWrap::PROVIDER_SHUTDOWNWRAP);
+  int err = DoShutdown();
+  if (err) {
+    AsyncWrap::EmitDestroy(env_, request_async_context_.async_id);
+    request_async_context_ = { -1, -1 };
+  }
   return err;
 }
 
 
-void StreamBase::AfterShutdown(ShutdownWrap* req_wrap, int status) {
-  Environment* env = req_wrap->env();
+void AsyncTrackingStream::AfterShutdown(int status) {
+  async_context ctx = request_async_context_;
+  CHECK_NE(ctx.async_id, -1);
+  request_async_context_ = { -1, -1 };
 
-  // The wrap and request objects should still be there.
-  CHECK_EQ(req_wrap->persistent().IsEmpty(), false);
+  HandleScope handle_scope(env_->isolate());
+  Context::Scope context_scope(env_->context());
 
-  HandleScope handle_scope(env->isolate());
-  Context::Scope context_scope(env->context());
+  {
+    InternalCallbackScope cb_scope(env_,
+                                   Local<Object>(),
+                                   ctx,
+                                   InternalCallbackScope::kAllowEmptyResource);
 
-  Local<Object> req_wrap_obj = req_wrap->object();
-  Local<Value> argv[3] = {
-    Integer::New(env->isolate(), status),
-    GetObject(),
-    req_wrap_obj
-  };
+    EmitAfterShutdown(status);
+  }
 
-  if (req_wrap_obj->Has(env->context(), env->oncomplete_string()).FromJust())
-    req_wrap->MakeCallback(env->oncomplete_string(), arraysize(argv), argv);
+  AsyncWrap::EmitDestroy(env_, ctx.async_id);
+}
 
-  delete req_wrap;
+
+void AsyncTrackingStream::StartAsyncOperation(
+    AsyncWrap::ProviderType provider) {
+  CHECK_EQ(request_async_context_.async_id, -1);
+
+  Local<Object> async_resource;
+  AsyncWrap* wrap = GetAsyncWrap();
+
+  double id = env_->new_async_id();
+  request_async_context_ = { id, wrap->get_trigger_async_id() };
+
+  if (env_->async_hooks()->fields()[AsyncHooks::kInit] == 0)
+    return;
+  async_resource = Object::New(env_->isolate());
+
+  Local<String> resource_type =
+      env_->async_hooks()->provider_string(provider);
+  AsyncWrap::EmitAsyncInit(env_,
+                           async_resource,
+                           resource_type,
+                           id,
+                           wrap->get_async_id());
 }
 
 
@@ -403,6 +427,12 @@ int StreamBase::WriteString(const FunctionCallbackInfo<Value>& args) {
 }
 
 
+void StreamBase::AfterShutdown(int status) {
+  SetErrorOnObject();
+  AsyncTrackingStream::AfterShutdown(status);
+}
+
+
 void StreamBase::AfterWrite(WriteWrap* req_wrap, int status) {
   Environment* env = req_wrap->env();
 
@@ -438,7 +468,7 @@ void StreamBase::AfterWrite(WriteWrap* req_wrap, int status) {
 
 
 void StreamBase::CallJSOnreadMethod(ssize_t nread, Local<Object> buf) {
-  Environment* env = env_;
+  Environment* env = stream_env();
 
   Local<Value> argv[] = {
     Integer::New(env->isolate(), nread),
@@ -461,11 +491,6 @@ bool StreamBase::IsIPCPipe() {
 
 int StreamBase::GetFD() {
   return -1;
-}
-
-
-Local<Object> StreamBase::GetObject() {
-  return GetAsyncWrap()->object();
 }
 
 
@@ -508,6 +533,23 @@ void EmitToJSStreamListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
 
   Local<Object> obj = Buffer::New(env, buf.base, nread).ToLocalChecked();
   stream->CallJSOnreadMethod(nread, obj);
+}
+
+void EmitToJSStreamListener::OnStreamAfterShutdown(int status) {
+  CHECK_NE(stream_, nullptr);
+  StreamBase* stream = static_cast<StreamBase*>(stream_);
+  Environment* env = stream->stream_env();
+
+  Local<Object> obj = stream->GetObject();
+  Local<Value> cb =
+      obj->Get(env->context(), env->onaftershutdown_string()).ToLocalChecked();
+  CHECK(cb->IsFunction());
+  Local<Value> argv[] = {
+    Integer::New(env->isolate(), status)
+  };
+
+  cb.As<Function>()->Call(env->context(), obj, arraysize(argv), argv)
+      .ToLocalChecked();
 }
 
 }  // namespace node

@@ -186,20 +186,15 @@ if (common.hasCrypto) { // eslint-disable-line crypto-check
   })).listen(0, common.localhostIPv4, common.mustCall(() => {
     const handle = new tcp_wrap.TCP(tcp_wrap.constants.SOCKET);
     const req = new tcp_wrap.TCPConnectWrap();
-    const sreq = new stream_wrap.ShutdownWrap();
     const wreq = new stream_wrap.WriteWrap();
     testInitialized(handle, 'TCP');
     testUninitialized(req, 'TCPConnectWrap');
-    testUninitialized(sreq, 'ShutdownWrap');
 
-    sreq.oncomplete = common.mustCall(() => {
-      handle.close();
-    });
+    handle.onaftershutdown = common.mustCall(() => handle.close());
 
     wreq.handle = handle;
     wreq.oncomplete = common.mustCall(() => {
-      handle.shutdown(sreq);
-      testInitialized(sreq, 'ShutdownWrap');
+      handle.shutdown();
     });
     wreq.async = true;
 

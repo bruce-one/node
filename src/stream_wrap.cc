@@ -62,14 +62,6 @@ void LibuvStreamWrap::Initialize(Local<Object> target,
     CHECK(args.IsConstructCall());
     ClearWrap(args.This());
   };
-  Local<FunctionTemplate> sw =
-      FunctionTemplate::New(env->isolate(), is_construct_call_callback);
-  sw->InstanceTemplate()->SetInternalFieldCount(1);
-  Local<String> wrapString =
-      FIXED_ONE_BYTE_STRING(env->isolate(), "ShutdownWrap");
-  sw->SetClassName(wrapString);
-  AsyncWrap::AddWrapMethods(env, sw);
-  target->Set(wrapString, sw->GetFunction());
 
   Local<FunctionTemplate> ww =
       FunctionTemplate::New(env->isolate(), is_construct_call_callback);
@@ -262,20 +254,16 @@ void LibuvStreamWrap::SetBlocking(const FunctionCallbackInfo<Value>& args) {
 }
 
 
-int LibuvStreamWrap::DoShutdown(ShutdownWrap* req_wrap) {
-  int err;
-  err = uv_shutdown(req_wrap->req(), stream(), AfterUvShutdown);
-  req_wrap->Dispatched();
-  return err;
-}
+int LibuvStreamWrap::DoShutdown() {
+  return uv_shutdown(&shutdown_, stream(), [](uv_shutdown_t* req, int status) {
+    LibuvStreamWrap* stream = ContainerOf(&LibuvStreamWrap::shutdown_, req);
+    Environment* env = stream->env();
 
+    HandleScope handle_scope(env->isolate());
+    Context::Scope context_scope(env->context());
 
-void LibuvStreamWrap::AfterUvShutdown(uv_shutdown_t* req, int status) {
-  ShutdownWrap* req_wrap = ShutdownWrap::from_req(req);
-  CHECK_NE(req_wrap, nullptr);
-  HandleScope scope(req_wrap->env()->isolate());
-  Context::Scope context_scope(req_wrap->env()->context());
-  req_wrap->Done(status);
+    stream->AfterShutdown(status);
+  });
 }
 
 

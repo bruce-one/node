@@ -49,7 +49,7 @@ class LibuvStreamWrap : public HandleWrap, public StreamBase {
   int ReadStop() override;
 
   // Resource implementation
-  int DoShutdown(ShutdownWrap* req_wrap) override;
+  int DoShutdown() override;
   int DoTryWrite(uv_buf_t** bufs, size_t* count) override;
   int DoWrite(WriteWrap* w,
               uv_buf_t* bufs,
@@ -95,9 +95,9 @@ class LibuvStreamWrap : public HandleWrap, public StreamBase {
   void OnUvRead(ssize_t nread, const uv_buf_t* buf);
 
   static void AfterUvWrite(uv_write_t* req, int status);
-  static void AfterUvShutdown(uv_shutdown_t* req, int status);
 
   uv_stream_t* const stream_;
+  uv_shutdown_t shutdown_;
 };
 
 

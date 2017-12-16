@@ -178,6 +178,7 @@ class ModuleWrap;
   V(netmask_string, "netmask")                                                \
   V(nsname_string, "nsname")                                                  \
   V(ocsp_request_string, "OCSPRequest")                                       \
+  V(onaftershutdown_string, "onaftershutdown")                                \
   V(onaltsvc_string, "onaltsvc")                                              \
   V(onchange_string, "onchange")                                              \
   V(onclienthello_string, "onclienthello")                                    \

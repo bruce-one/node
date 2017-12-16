@@ -40,30 +40,6 @@ class StreamReq {
   StreamBase* const stream_;
 };
 
-class ShutdownWrap : public ReqWrap<uv_shutdown_t>,
-                     public StreamReq<ShutdownWrap> {
- public:
-  ShutdownWrap(Environment* env,
-               v8::Local<v8::Object> req_wrap_obj,
-               StreamBase* stream)
-      : ReqWrap(env, req_wrap_obj, AsyncWrap::PROVIDER_SHUTDOWNWRAP),
-        StreamReq<ShutdownWrap>(stream) {
-    Wrap(req_wrap_obj, this);
-  }
-
-  ~ShutdownWrap() {
-    ClearWrap(object());
-  }
-
-  static ShutdownWrap* from_req(uv_shutdown_t* req) {
-    return ContainerOf(&ShutdownWrap::req_, req);
-  }
-
-  size_t self_size() const override { return sizeof(*this); }
-
-  inline void OnDone(int status);  // Just calls stream()->AfterShutdown()
-};
-
 class WriteWrap : public ReqWrap<uv_write_t>,
                   public StreamReq<WriteWrap> {
  public:
@@ -156,6 +132,9 @@ class StreamListener {
   // This is called once a Write has finished. `status` may be 0 or,
   // if negative, a libuv error code.
   virtual void OnStreamAfterWrite(WriteWrap* w, int status) {}
+  // This is called once (the writable side of) this stream has been shut down.
+  // `status` may be 0 or, if negative, a libuv error code.
+  virtual void OnStreamAfterShutdown(int status) {}
 
   // This is called immediately before the stream is destroyed.
   virtual void OnStreamDestroy() {}
@@ -179,6 +158,7 @@ class StreamListener {
 class EmitToJSStreamListener : public StreamListener {
  public:
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
+  void OnStreamAfterShutdown(int status) override;
 };
 
 
@@ -188,8 +168,12 @@ class StreamResource {
  public:
   virtual ~StreamResource();
 
-  virtual int DoShutdown(ShutdownWrap* req_wrap) = 0;
+  // For stream implementers: Shut down the writable side of this stream.
+  virtual int DoShutdown() = 0;
+  // For stream implementers: Write as much data as possible without
+  // starting to block the stream; in particular, fully synchronously.
   virtual int DoTryWrite(uv_buf_t** bufs, size_t* count);
+  // For stream implementers: Write data to the stream.
   virtual int DoWrite(WriteWrap* w,
                       uv_buf_t* bufs,
                       size_t count,
@@ -208,6 +192,9 @@ class StreamResource {
   // Clear the current error (i.e. that would be returned by Error()).
   virtual void ClearError();
 
+  // Shut down this stream.
+  virtual int Shutdown();
+
   // Transfer ownership of this tream to `listener`. The previous listener
   // will not receive any more callbacks while the new listener was active.
   void PushStreamListener(StreamListener* listener);
@@ -223,6 +210,8 @@ class StreamResource {
   void EmitRead(ssize_t nread, const uv_buf_t& buf = uv_buf_init(nullptr, 0));
   // Call the current listener's OnStreamAfterWrite() method.
   void EmitAfterWrite(WriteWrap* w, int status);
+  // Call the current listener's OnStreamAfterShutdown() method.
+  void EmitAfterShutdown(int status);
 
   StreamListener* listener_ = nullptr;
   uint64_t bytes_read_ = 0;
@@ -231,7 +220,34 @@ class StreamResource {
 };
 
 
-class StreamBase : public StreamResource {
+class AsyncTrackingStream : public StreamResource {
+ public:
+  ~AsyncTrackingStream();
+
+  virtual AsyncWrap* GetAsyncWrap() = 0;
+
+  // Shuts down this stream instance, keeping track of async context.
+  int Shutdown() override;
+
+  // This is named `stream_env` to avoid name clashes, because a lot of
+  // subclasses are also `BaseObject`s.
+  Environment* stream_env() const;
+ protected:
+  explicit AsyncTrackingStream(Environment* env);
+
+  // This is called by the stream implementer after a DoShutdown() call
+  // is finished (possibly asynchronously).
+  virtual void AfterShutdown(int status);
+
+ private:
+  void StartAsyncOperation(AsyncWrap::ProviderType provider);
+
+  Environment* env_;
+  async_context request_async_context_ = { -1, -1 };
+};
+
+
+class StreamBase : public AsyncTrackingStream {
  public:
   enum Flags {
     kFlagNone = 0x0,
@@ -251,25 +267,20 @@ class StreamBase : public StreamResource {
 
   void CallJSOnreadMethod(ssize_t nread, v8::Local<v8::Object> buf);
 
-  // These are called by the respective {Write,Shutdown}Wrap class.
-  virtual void AfterShutdown(ShutdownWrap* req, int status);
+  // This is called by the stream implementer after a DoWrite() call
+  // is finished (possibly asynchronously).
   virtual void AfterWrite(WriteWrap* req, int status);
+  void AfterShutdown(int status) override;
 
-  // This is named `stream_env` to avoid name clashes, because a lot of
-  // subclasses are also `BaseObject`s.
-  Environment* stream_env() const;
+  v8::Local<v8::Object> GetObject();
 
  protected:
   explicit StreamBase(Environment* env);
 
-  // One of these must be implemented
-  virtual AsyncWrap* GetAsyncWrap() = 0;
-  virtual v8::Local<v8::Object> GetObject();
-
   // JS Methods
   int ReadStartJS(const v8::FunctionCallbackInfo<v8::Value>& args);
   int ReadStopJS(const v8::FunctionCallbackInfo<v8::Value>& args);
-  int Shutdown(const v8::FunctionCallbackInfo<v8::Value>& args);
+  int ShutdownJS(const v8::FunctionCallbackInfo<v8::Value>& args);
   int Writev(const v8::FunctionCallbackInfo<v8::Value>& args);
   int WriteBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
   template <enum encoding enc>
@@ -290,7 +301,6 @@ class StreamBase : public StreamResource {
   static void JSMethod(const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
-  Environment* env_;
   EmitToJSStreamListener default_listener_;
 };
 

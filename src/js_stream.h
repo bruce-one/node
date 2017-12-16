@@ -23,7 +23,7 @@ class JSStream : public AsyncWrap, public StreamBase {
   int ReadStart() override;
   int ReadStop() override;
 
-  int DoShutdown(ShutdownWrap* req_wrap) override;
+  int DoShutdown() override;
   int DoWrite(WriteWrap* w,
               uv_buf_t* bufs,
               size_t count,
@@ -46,8 +46,8 @@ class JSStream : public AsyncWrap, public StreamBase {
                          uv_handle_type pending,
                          void* ctx);
 
-  template <class Wrap>
-  static void Finish(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void FinishWrite(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void FinishShutdown(const v8::FunctionCallbackInfo<v8::Value>& args);
 };
 
 }  // namespace node

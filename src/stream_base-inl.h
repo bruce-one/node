@@ -93,14 +93,35 @@ inline void StreamResource::EmitAfterWrite(WriteWrap* w, int status) {
   listener_->OnStreamAfterWrite(w, status);
 }
 
+inline void StreamResource::EmitAfterShutdown(int status) {
+  listener_->OnStreamAfterShutdown(status);
+}
 
-inline StreamBase::StreamBase(Environment* env) : env_(env) {
+inline int StreamResource::Shutdown() {
+  return DoShutdown();
+}
+
+inline AsyncTrackingStream::AsyncTrackingStream(Environment* env) : env_(env) {}
+
+inline AsyncTrackingStream::~AsyncTrackingStream() {
+  if (request_async_context_.async_id != -1) {
+    AsyncWrap::EmitDestroy(env_, request_async_context_.async_id);
+  }
+}
+
+inline Environment* AsyncTrackingStream::stream_env() const {
+  return env_;
+}
+
+
+inline StreamBase::StreamBase(Environment* env) : AsyncTrackingStream(env) {
   PushStreamListener(&default_listener_);
 }
 
-inline Environment* StreamBase::stream_env() const {
-  return env_;
+inline v8::Local<v8::Object> StreamBase::GetObject() {
+  return GetAsyncWrap()->object();
 }
+
 
 template <class Base>
 void StreamBase::AddMethods(Environment* env,
@@ -150,7 +171,7 @@ void StreamBase::AddMethods(Environment* env,
   env->SetProtoMethod(t, "readStart", JSMethod<Base, &StreamBase::ReadStartJS>);
   env->SetProtoMethod(t, "readStop", JSMethod<Base, &StreamBase::ReadStopJS>);
   if ((flags & kFlagNoShutdown) == 0)
-    env->SetProtoMethod(t, "shutdown", JSMethod<Base, &StreamBase::Shutdown>);
+    env->SetProtoMethod(t, "shutdown", JSMethod<Base, &StreamBase::ShutdownJS>);
   if ((flags & kFlagHasWritev) != 0)
     env->SetProtoMethod(t, "writev", JSMethod<Base, &StreamBase::Writev>);
   env->SetProtoMethod(t,
@@ -223,11 +244,6 @@ void StreamBase::JSMethod(const FunctionCallbackInfo<Value>& args) {
   AsyncHooks::DefaultTriggerAsyncIdScope trigger_scope(
     handle->env(), handle->get_async_id());
   args.GetReturnValue().Set((wrap->*Method)(args));
-}
-
-
-inline void ShutdownWrap::OnDone(int status) {
-  stream()->AfterShutdown(this, status);
 }
 
 

@@ -341,6 +341,20 @@ void TLSWrap::OnStreamAfterWrite(WriteWrap* req_wrap, int status) {
 }
 
 
+void TLSWrap::OnStreamAfterShutdown(int status) {
+  if (!shutdown_) {
+    // This means the underlying stream was shut down externally, without
+    // any interaction from the owning TLSWrap.
+    // `test/parallel/test-tls-alert-handling.js` is currently triggering
+    // that condition.
+    // TODO(addaleax): Don't let that happen.
+    return;
+  }
+
+  AfterShutdown(status);
+}
+
+
 Local<Value> TLSWrap::GetSSLError(int status, int* err, std::string* msg) {
   EscapableHandleScope scope(env()->isolate());
 
@@ -676,7 +690,7 @@ void TLSWrap::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
 }
 
 
-int TLSWrap::DoShutdown(ShutdownWrap* req_wrap) {
+int TLSWrap::DoShutdown() {
   crypto::MarkPopErrorOnReturn mark_pop_error_on_return;
 
   if (ssl_ != nullptr && SSL_shutdown(ssl_) == 0)
@@ -684,7 +698,7 @@ int TLSWrap::DoShutdown(ShutdownWrap* req_wrap) {
 
   shutdown_ = true;
   EncOut();
-  return stream_->DoShutdown(req_wrap);
+  return stream_->Shutdown();
 }
 
 
