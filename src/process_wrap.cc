@@ -19,8 +19,11 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include "async_wrap-inl.h"
+#include "base_object-inl.h"
 #include "env-inl.h"
 #include "handle_wrap.h"
+#include "node_internals.h"
 #include "node_wrap.h"
 #include "stream_base-inl.h"
 #include "util-inl.h"

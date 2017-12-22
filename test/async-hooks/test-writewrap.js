@@ -63,7 +63,7 @@ function onconnect() {
   //
   // Destroying client socket
   //
-  this.write('f'.repeat(128000), () => onafterwrite(this));
+  this.write('f'.repeat(12800000), () => onafterwrite(this));
 }
 
 function onafterwrite(self) {

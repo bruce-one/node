@@ -40,7 +40,7 @@
 namespace node {
 
 // Forward-declarations
-class WriteWrap;
+
 namespace crypto {
 class SecureContext;
 class NodeBIO;
@@ -66,8 +66,7 @@ class TLSWrap : public AsyncWrap,
   int ReadStop() override;
 
   int DoShutdown() override;
-  int DoWrite(WriteWrap* w,
-              uv_buf_t* bufs,
+  int DoWrite(uv_buf_t* bufs,
               size_t count,
               uv_stream_t* send_handle) override;
   const char* Error() const override;
@@ -117,7 +116,7 @@ class TLSWrap : public AsyncWrap,
   bool IsIPCPipe() override;
 
   // Resource implementation
-  void OnStreamAfterWrite(WriteWrap* w, int status) override;
+  void OnStreamAfterWrite(int status) override;
   void OnStreamAfterShutdown(int status) override;
   uv_buf_t OnStreamAlloc(size_t size) override;
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
@@ -146,7 +145,7 @@ class TLSWrap : public AsyncWrap,
   BIO* enc_out_;
   std::vector<uv_buf_t> pending_cleartext_input_;
   size_t write_size_;
-  WriteWrap* current_write_ = nullptr;
+  bool currently_writing_data_ = false;
   bool write_callback_scheduled_ = false;
   bool started_;
   bool established_;

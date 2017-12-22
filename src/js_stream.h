@@ -24,8 +24,7 @@ class JSStream : public AsyncWrap, public StreamBase {
   int ReadStop() override;
 
   int DoShutdown() override;
-  int DoWrite(WriteWrap* w,
-              uv_buf_t* bufs,
+  int DoWrite(uv_buf_t* bufs,
               size_t count,
               uv_stream_t* send_handle) override;
 

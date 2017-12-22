@@ -14,6 +14,9 @@
 namespace node {
 namespace http2 {
 
+class Http2Stream;
+class Http2Session;
+
 using v8::Array;
 using v8::Context;
 using v8::EscapableHandleScope;
@@ -135,12 +138,12 @@ enum nghttp2_stream_options {
 };
 
 struct nghttp2_stream_write {
-  WriteWrap* req_wrap = nullptr;
+  Http2Stream* finishes_write_for_stream = nullptr;
   uv_buf_t buf;
 
   inline explicit nghttp2_stream_write(uv_buf_t buf_) : buf(buf_) {}
-  inline nghttp2_stream_write(WriteWrap* req, uv_buf_t buf_) :
-      req_wrap(req), buf(buf_) {}
+  inline nghttp2_stream_write(Http2Stream* stream, uv_buf_t buf_) :
+      finishes_write_for_stream(stream), buf(buf_) {}
 };
 
 struct nghttp2_header {
@@ -439,9 +442,6 @@ static const size_t kAllocBufferSize = 4 * (16384 + 9);
 typedef uint32_t(*get_setting)(nghttp2_session* session,
                                nghttp2_settings_id id);
 
-class Http2Session;
-class Http2Stream;
-
 // This scope should be present when any call into nghttp2 that may schedule
 // data to be written to the underlying transport is made, and schedules
 // such a write automatically once the scope is exited.
@@ -539,6 +539,10 @@ class Http2StreamListener : public StreamListener {
  public:
   uv_buf_t OnStreamAlloc(size_t suggested_size) override;
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
+
+  void OnStreamAfterWrite(int status) override {
+    previous_listener_->OnStreamAfterWrite(status);
+  }
 };
 
 class Http2Stream : public AsyncWrap,
@@ -671,7 +675,8 @@ class Http2Stream : public AsyncWrap,
 
   AsyncWrap* GetAsyncWrap() override { return this; }
 
-  int DoWrite(WriteWrap* w, uv_buf_t* bufs, size_t count,
+  int DoWrite(uv_buf_t* bufs,
+              size_t count,
               uv_stream_t* send_handle) override;
 
   size_t self_size() const override { return sizeof(*this); }
@@ -881,7 +886,7 @@ class Http2Session : public AsyncWrap, public StreamListener {
 
   // Handle reads/writes from the underlying network transport.
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
-  void OnStreamAfterWrite(WriteWrap* w, int status) override;
+  void OnStreamAfterWrite(int status) override;
 
   // The JavaScript API
   static void New(const FunctionCallbackInfo<Value>& args);
@@ -903,8 +908,6 @@ class Http2Session : public AsyncWrap, public StreamListener {
 
   template <get_setting fn>
   static void GetSettings(const FunctionCallbackInfo<Value>& args);
-
-  WriteWrap* AllocateSend();
 
   uv_loop_t* event_loop() const {
     return env()->event_loop();

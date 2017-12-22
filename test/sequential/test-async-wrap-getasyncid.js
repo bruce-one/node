@@ -167,43 +167,27 @@ if (common.hasCrypto) { // eslint-disable-line crypto-check
   testInitialized(new Signal(), 'Signal');
 }
 
-
 {
-  const binding = process.binding('stream_wrap');
-  testUninitialized(new binding.WriteWrap(), 'WriteWrap');
-}
-
-{
-  const stream_wrap = process.binding('stream_wrap');
   const tcp_wrap = process.binding('tcp_wrap');
   const server = net.createServer(common.mustCall((socket) => {
     server.close();
-    socket.on('data', () => {
-      socket.end();
-      socket.destroy();
-    });
     socket.resume();
   })).listen(0, common.localhostIPv4, common.mustCall(() => {
     const handle = new tcp_wrap.TCP(tcp_wrap.constants.SOCKET);
     const req = new tcp_wrap.TCPConnectWrap();
-    const wreq = new stream_wrap.WriteWrap();
     testInitialized(handle, 'TCP');
     testUninitialized(req, 'TCPConnectWrap');
 
     handle.onaftershutdown = common.mustCall(() => handle.close());
-
-    wreq.handle = handle;
-    wreq.oncomplete = common.mustCall(() => {
+    handle.onafterwrite = common.mustCall(() => {
       handle.shutdown();
     });
-    wreq.async = true;
 
     req.oncomplete = common.mustCall(() => {
       // Use a long string to make sure the write happens asynchronously.
-      const err = handle.writeLatin1String(wreq, 'hi'.repeat(100000));
+      const err = handle.writeLatin1String('hi'.repeat(10000000));
       if (err)
         throw new Error(`write failed: ${getSystemErrorName(err)}`);
-      testInitialized(wreq, 'WriteWrap');
     });
     req.address = common.localhostIPv4;
     req.port = server.address().port;

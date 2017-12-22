@@ -569,6 +569,15 @@ class Parser : public AsyncWrap, public StreamListener {
   }
 
 
+  void OnStreamAfterWrite(int status) override {
+    previous_listener_->OnStreamAfterWrite(status);
+  }
+
+  void OnStreamAfterShutdown(int status) override {
+    previous_listener_->OnStreamAfterShutdown(status);
+  }
+
+
   Local<Value> Execute(char* data, size_t len) {
     EscapableHandleScope scope(env()->isolate());
 

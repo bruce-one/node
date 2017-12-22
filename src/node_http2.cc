@@ -1,8 +1,9 @@
 #include "aliased_buffer.h"
-#include "node.h"
+#include "async_wrap-inl.h"
 #include "node_buffer.h"
 #include "node_http2.h"
 #include "node_http2_state.h"
+#include "node_internals.h"
 #include "node_perf.h"
 
 #include <algorithm>
@@ -1415,7 +1416,7 @@ inline void Http2Session::HandleSettingsFrame(const nghttp2_frame* frame) {
 }
 
 // Callback used when data has been written to the stream.
-void Http2Session::OnStreamAfterWrite(WriteWrap* w, int status) {
+void Http2Session::OnStreamAfterWrite(int status) {
   DEBUG_HTTP2SESSION2(this, "write finished with status %d", status);
 
   // Inform all pending writes about their completion.
@@ -1461,9 +1462,9 @@ void Http2Session::ClearOutgoing(int status) {
   flags_ &= ~SESSION_STATE_SENDING;
 
   for (const nghttp2_stream_write& wr : outgoing_buffers_) {
-    WriteWrap* wrap = wr.req_wrap;
-    if (wrap != nullptr)
-      wrap->Done(status);
+    Http2Stream* stream = wr.finishes_write_for_stream;
+    if (stream != nullptr)
+      stream->AfterWrite(status);
   }
 
   outgoing_buffers_.clear();
@@ -1558,18 +1559,10 @@ void Http2Session::SendPendingData() {
 
   chunks_sent_since_last_write_++;
 
-  // DoTryWrite may modify both the buffer list start itself and the
-  // base pointers/length of the individual buffers.
-  uv_buf_t* writebufs = *bufs;
-  if (stream_->DoTryWrite(&writebufs, &count) != 0 || count == 0) {
+  StreamWriteResult res = stream_->Write(*bufs, count, nullptr);
+  if (!res.async) {
     // All writes finished synchronously, nothing more to do here.
-    ClearOutgoing(0);
-    return;
-  }
-
-  WriteWrap* req = AllocateSend();
-  if (stream_->DoWrite(req, writebufs, count, nullptr) != 0) {
-    req->Dispose();
+    ClearOutgoing(res.err);
   }
 
   DEBUG_HTTP2SESSION2(this, "wants data in return? %d",
@@ -1653,15 +1646,6 @@ inline Http2Stream* Http2Session::SubmitRequest(
 
 inline void Http2Session::SetChunksSinceLastWrite(size_t n) {
   chunks_sent_since_last_write_ = n;
-}
-
-// Allocates the data buffer used to pass outbound data to the i/o stream.
-WriteWrap* Http2Session::AllocateSend() {
-  HandleScope scope(env()->isolate());
-  Local<Object> obj =
-      env()->write_wrap_constructor_function()
-          ->NewInstance(env()->context()).ToLocalChecked();
-  return WriteWrap::New(env(), obj, static_cast<StreamBase*>(stream_));
 }
 
 // Callback used to receive inbound data from the i/o stream
@@ -1875,8 +1859,8 @@ inline void Http2Stream::Destroy() {
     // we still have qeueued outbound writes.
     while (!stream->queue_.empty()) {
       nghttp2_stream_write& head = stream->queue_.front();
-      if (head.req_wrap != nullptr)
-        head.req_wrap->Done(UV_ECANCELED);
+      if (head.finishes_write_for_stream != nullptr)
+        head.finishes_write_for_stream->AfterWrite(UV_ECANCELED);
       stream->queue_.pop();
     }
 
@@ -2030,29 +2014,26 @@ inline int Http2Stream::ReadStop() {
 // when nghttp2 is ready to serialize the data frame.
 //
 // Queue the given set of uv_but_t handles for writing to an
-// nghttp2_stream. The WriteWrap's Done callback will be invoked once the
+// nghttp2_stream. The stream's AfterWrite callback will be invoked once the
 // chunks of data have been flushed to the underlying nghttp2_session.
 // Note that this does *not* mean that the data has been flushed
 // to the socket yet.
-inline int Http2Stream::DoWrite(WriteWrap* req_wrap,
-                                uv_buf_t* bufs,
+inline int Http2Stream::DoWrite(uv_buf_t* bufs,
                                 size_t nbufs,
                                 uv_stream_t* send_handle) {
   CHECK(!this->IsDestroyed());
   CHECK_EQ(send_handle, nullptr);
   Http2Scope h2scope(this);
   session_->SetChunksSinceLastWrite();
-  req_wrap->Dispatched();
   if (!IsWritable()) {
-    req_wrap->Done(UV_EOF);
-    return 0;
+    return UV_EOF;
   }
   DEBUG_HTTP2STREAM2(this, "queuing %d buffers to send", id_, nbufs);
   for (size_t i = 0; i < nbufs; ++i) {
-    // Store the req_wrap on the last write info in the queue, so that it is
+    // Store the stream on the last write info in the queue, so that the write
     // only marked as finished once all buffers associated with it are finished.
     queue_.emplace(nghttp2_stream_write {
-      i == nbufs - 1 ? req_wrap : nullptr,
+      i == nbufs - 1 ? this : nullptr,
       bufs[i]
     });
     IncrementAvailableOutboundLength(bufs[i].len);

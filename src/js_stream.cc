@@ -1,8 +1,9 @@
 #include "js_stream.h"
 
-#include "async_wrap.h"
+#include "async_wrap-inl.h"
 #include "env-inl.h"
 #include "node_buffer.h"
+#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "v8.h"
 
@@ -98,8 +99,7 @@ int JSStream::DoShutdown() {
 }
 
 
-int JSStream::DoWrite(WriteWrap* w,
-                      uv_buf_t* bufs,
+int JSStream::DoWrite(uv_buf_t* bufs,
                       size_t count,
                       uv_stream_t* send_handle) {
   CHECK_EQ(send_handle, nullptr);
@@ -115,11 +115,8 @@ int JSStream::DoWrite(WriteWrap* w,
   }
 
   Local<Value> argv[] = {
-    w->object(),
     bufs_arr
   };
-
-  w->Dispatched();
 
   TryCatch try_catch(env()->isolate());
   Local<Value> value;
@@ -145,11 +142,14 @@ void JSStream::New(const FunctionCallbackInfo<Value>& args) {
 
 
 void JSStream::FinishWrite(const FunctionCallbackInfo<Value>& args) {
-  WriteWrap* w;
-  CHECK(args[0]->IsObject());
-  ASSIGN_OR_RETURN_UNWRAP(&w, args[0].As<Object>());
+  JSStream* wrap;
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
 
-  w->Done(args[1]->Int32Value());
+  Local<Context> context = args.GetIsolate()->GetCurrentContext();
+  int32_t status;
+  if (!args[0]->Int32Value(context).To(&status))
+    return;
+  wrap->AfterWrite(status);
 }
 
 

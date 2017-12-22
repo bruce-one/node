@@ -89,8 +89,8 @@ inline void StreamResource::EmitRead(ssize_t nread, const uv_buf_t& buf) {
   listener_->OnStreamRead(nread, buf);
 }
 
-inline void StreamResource::EmitAfterWrite(WriteWrap* w, int status) {
-  listener_->OnStreamAfterWrite(w, status);
+inline void StreamResource::EmitAfterWrite(int status) {
+  listener_->OnStreamAfterWrite(status);
 }
 
 inline void StreamResource::EmitAfterShutdown(int status) {
@@ -246,37 +246,6 @@ void StreamBase::JSMethod(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set((wrap->*Method)(args));
 }
 
-
-WriteWrap* WriteWrap::New(Environment* env,
-                          Local<Object> obj,
-                          StreamBase* wrap,
-                          size_t extra) {
-  size_t storage_size = ROUND_UP(sizeof(WriteWrap), kAlignSize) + extra;
-  char* storage = new char[storage_size];
-
-  return new(storage) WriteWrap(env, obj, wrap, storage_size);
-}
-
-
-void WriteWrap::Dispose() {
-  this->~WriteWrap();
-  delete[] reinterpret_cast<char*>(this);
-}
-
-
-char* WriteWrap::Extra(size_t offset) {
-  return reinterpret_cast<char*>(this) +
-         ROUND_UP(sizeof(*this), kAlignSize) +
-         offset;
-}
-
-size_t WriteWrap::ExtraSize() const {
-  return storage_size_ - ROUND_UP(sizeof(*this), kAlignSize);
-}
-
-inline void WriteWrap::OnDone(int status) {
-  stream()->AfterWrite(this, status);
-}
 
 }  // namespace node
 

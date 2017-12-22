@@ -27,6 +27,7 @@
 #include "aliased_buffer.h"
 #include "env.h"
 #include "node.h"
+#include "stream_base.h"
 #include "util-inl.h"
 #include "uv.h"
 #include "v8.h"
@@ -324,6 +325,7 @@ inline Environment::Environment(IsolateData* isolate_data,
       emit_napi_warning_(true),
       makecallback_cntr_(0),
       should_abort_on_uncaught_toggle_(isolate_, 1),
+      write_info_buffer_(isolate_, kWriteInfoBufferFieldCount),
 #if HAVE_INSPECTOR
       inspector_agent_(new inspector::Agent(this)),
 #endif
@@ -538,10 +540,21 @@ Environment::fs_stats_field_array() {
   return &fs_stats_field_array_;
 }
 
+inline AliasedBuffer<double, v8::Float64Array>&
+Environment::write_info_buffer() {
+  return write_info_buffer_;
+}
+
+inline void Environment::fill_write_info_buffer(const StreamWriteResult& res) {
+  write_info_buffer_[kStreamWriteAsyncFlag] = res.async;
+  write_info_buffer_[kStreamWriteError] = res.err;
+  write_info_buffer_[kStreamDispatchedBytes] = res.bytes;
+}
+
 void Environment::CreateImmediate(native_immediate_callback cb,
-                               void* data,
-                               v8::Local<v8::Object> obj,
-                               bool ref) {
+                                  void* data,
+                                  v8::Local<v8::Object> obj,
+                                  bool ref) {
   native_immediate_callbacks_.push_back({
     cb,
     data,

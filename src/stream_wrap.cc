@@ -57,21 +57,16 @@ void LibuvStreamWrap::Initialize(Local<Object> target,
                                  Local<Context> context) {
   Environment* env = Environment::GetCurrent(context);
 
-  auto is_construct_call_callback =
-      [](const FunctionCallbackInfo<Value>& args) {
-    CHECK(args.IsConstructCall());
-    ClearWrap(args.This());
-  };
+  const int kStreamWriteAsyncFlag = Environment::kStreamWriteAsyncFlag;
+  const int kStreamWriteError = Environment::kStreamWriteError;
+  const int kStreamDispatchedBytes = Environment::kStreamDispatchedBytes;
 
-  Local<FunctionTemplate> ww =
-      FunctionTemplate::New(env->isolate(), is_construct_call_callback);
-  ww->InstanceTemplate()->SetInternalFieldCount(1);
-  Local<String> writeWrapString =
-      FIXED_ONE_BYTE_STRING(env->isolate(), "WriteWrap");
-  ww->SetClassName(writeWrapString);
-  AsyncWrap::AddWrapMethods(env, ww);
-  target->Set(writeWrapString, ww->GetFunction());
-  env->set_write_wrap_constructor_function(ww->GetFunction());
+  target->Set(env->context(),
+              FIXED_ONE_BYTE_STRING(env->isolate(), "writeInfoBuffer"),
+              env->write_info_buffer().GetJSArray()).FromJust();
+  NODE_DEFINE_CONSTANT(target, kStreamWriteAsyncFlag);
+  NODE_DEFINE_CONSTANT(target, kStreamWriteError);
+  NODE_DEFINE_CONSTANT(target, kStreamDispatchedBytes);
 }
 
 
@@ -255,8 +250,12 @@ void LibuvStreamWrap::SetBlocking(const FunctionCallbackInfo<Value>& args) {
 
 
 int LibuvStreamWrap::DoShutdown() {
-  return uv_shutdown(&shutdown_, stream(), [](uv_shutdown_t* req, int status) {
-    LibuvStreamWrap* stream = ContainerOf(&LibuvStreamWrap::shutdown_, req);
+  return uv_shutdown(&req_.shutdown,
+                     stream(), [](uv_shutdown_t* req, int status) {
+  LibuvStreamWrap* stream =
+      ContainerOf(&LibuvStreamWrap::req_,
+                  static_cast<generic_stream_request*>(
+                      ContainerOf(&generic_stream_request::shutdown, req)));
     Environment* env = stream->env();
 
     HandleScope handle_scope(env->isolate());
@@ -307,15 +306,15 @@ int LibuvStreamWrap::DoTryWrite(uv_buf_t** bufs, size_t* count) {
 }
 
 
-int LibuvStreamWrap::DoWrite(WriteWrap* w,
-                        uv_buf_t* bufs,
-                        size_t count,
-                        uv_stream_t* send_handle) {
+int LibuvStreamWrap::DoWrite(uv_buf_t* bufs,
+                             size_t count,
+                             uv_stream_t* send_handle) {
   int r;
   if (send_handle == nullptr) {
-    r = uv_write(w->req(), stream(), bufs, count, AfterUvWrite);
+    r = uv_write(&req_.write, stream(), bufs, count, AfterUvWrite);
   } else {
-    r = uv_write2(w->req(), stream(), bufs, count, send_handle, AfterUvWrite);
+    r = uv_write2(&req_.write, stream(), bufs, count, send_handle,
+                  AfterUvWrite);
   }
 
   if (!r) {
@@ -329,22 +328,21 @@ int LibuvStreamWrap::DoWrite(WriteWrap* w,
     }
   }
 
-  w->Dispatched();
-
   return r;
 }
 
 
-
 void LibuvStreamWrap::AfterUvWrite(uv_write_t* req, int status) {
-  WriteWrap* req_wrap = WriteWrap::from_req(req);
-  CHECK_NE(req_wrap, nullptr);
-  HandleScope scope(req_wrap->env()->isolate());
-  Context::Scope context_scope(req_wrap->env()->context());
-  req_wrap->Done(status);
+  LibuvStreamWrap* stream =
+      ContainerOf(&LibuvStreamWrap::req_,
+                  static_cast<generic_stream_request*>(
+                      ContainerOf(&generic_stream_request::write, req)));
+
+  stream->AfterWrite(status);
 }
+
 
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(stream_wrap,
-                                  node::LibuvStreamWrap::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(stream_wrap,
+                                   node::LibuvStreamWrap::Initialize)

@@ -99,10 +99,11 @@ bool TLSWrap::InvokeQueued(int status, const char* error_str) {
   if (!write_callback_scheduled_)
     return false;
 
-  if (current_write_ != nullptr) {
-    WriteWrap* w = current_write_;
-    current_write_ = nullptr;
-    w->Done(status, error_str);
+  if (currently_writing_data_) {
+    currently_writing_data_ = false;
+    if (error_str != nullptr)
+      error_ = error_str;
+    AfterWrite(status);
   }
 
   return true;
@@ -258,7 +259,7 @@ void TLSWrap::EncOut() {
     return;
 
   // Split-off queue
-  if (established_ && current_write_ != nullptr)
+  if (established_ && currently_writing_data_)
     write_callback_scheduled_ = true;
 
   if (ssl_ == nullptr)
@@ -280,41 +281,27 @@ void TLSWrap::EncOut() {
   CHECK(write_size_ != 0 && count != 0);
 
   uv_buf_t buf[arraysize(data)];
-  uv_buf_t* bufs = buf;
   for (size_t i = 0; i < count; i++)
     buf[i] = uv_buf_init(data[i], size[i]);
-
-  int err = stream_->DoTryWrite(&bufs, &count);
-  if (err != 0) {
-    InvokeQueued(err);
-  } else if (count == 0) {
-    env()->SetImmediate([](Environment* env, void* data) {
-      NODE_COUNT_NET_BYTES_SENT(write_size_);
-      static_cast<TLSWrap*>(data)->OnStreamAfterWrite(nullptr, 0);
-    }, this, object());
-    return;
-  }
-
-  Local<Object> req_wrap_obj =
-      env()->write_wrap_constructor_function()
-          ->NewInstance(env()->context()).ToLocalChecked();
-  WriteWrap* write_req = WriteWrap::New(env(),
-                                        req_wrap_obj,
-                                        static_cast<StreamBase*>(stream_));
-
-  err = stream_->DoWrite(write_req, buf, count, nullptr);
+  StreamWriteResult res = stream_->Write(buf, count);
+  CHECK_EQ(res.bytes, write_size_);
 
   // Ignore errors, this should be already handled in js
-  if (err) {
-    write_req->Dispose();
-    InvokeQueued(err);
+  if (res.err != 0) {
+    InvokeQueued(res.err);
   } else {
     NODE_COUNT_NET_BYTES_SENT(write_size_);
+    if (!res.async) {
+      env()->SetImmediate([](Environment* env, void* data) {
+        TLSWrap* self = static_cast<TLSWrap*>(data);
+        self->OnStreamAfterWrite(0);
+      }, this, object());
+    }
   }
 }
 
 
-void TLSWrap::OnStreamAfterWrite(WriteWrap* req_wrap, int status) {
+void TLSWrap::OnStreamAfterWrite(int status) {
   if (ssl_ == nullptr)
     status = UV_ECANCELED;
 
@@ -338,6 +325,12 @@ void TLSWrap::OnStreamAfterWrite(WriteWrap* req_wrap, int status) {
   // Try writing more data
   write_size_ = 0;
   EncOut();
+
+  if (write_size_ == 0 && shutdown_ && stream_ != nullptr) {
+    int status = stream_->Shutdown();
+    if (status != 0)
+      AfterShutdown(status);
+  }
 }
 
 
@@ -572,8 +565,7 @@ void TLSWrap::ClearError() {
 }
 
 
-int TLSWrap::DoWrite(WriteWrap* w,
-                     uv_buf_t* bufs,
+int TLSWrap::DoWrite(uv_buf_t* bufs,
                      size_t count,
                      uv_stream_t* send_handle) {
   CHECK_EQ(send_handle, nullptr);
@@ -593,14 +585,18 @@ int TLSWrap::DoWrite(WriteWrap* w,
     // However, if there is any data that should be written to the socket,
     // the callback should not be invoked immediately
     if (BIO_pending(enc_out_) == 0) {
-      return stream_->DoWrite(w, bufs, count, send_handle);
+      StreamWriteResult res = stream_->Write(bufs, count, send_handle);
+      if (res.err == 0 && !res.async) {
+        env()->SetImmediate([](Environment* env, void* data) {
+          static_cast<TLSWrap*>(data)->AfterWrite(0);
+        }, this, object());
+      }
+      return res.err;
     }
   }
 
-  // Store the current write wrap
-  CHECK_EQ(current_write_, nullptr);
-  current_write_ = w;
-  w->Dispatched();
+  CHECK(!currently_writing_data_);
+  currently_writing_data_ = true;
 
   // Write queued data
   if (empty) {
@@ -698,7 +694,7 @@ int TLSWrap::DoShutdown() {
 
   shutdown_ = true;
   EncOut();
-  return stream_->Shutdown();
+  return 0;
 }
 
 

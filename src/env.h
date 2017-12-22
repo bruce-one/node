@@ -55,6 +55,8 @@ namespace loader {
 class ModuleWrap;
 }
 
+struct StreamWriteResult;
+
 // Pick an index that's hopefully out of the way when we're embedded inside
 // another application. Performance-wise or memory-wise it doesn't matter:
 // Context::SetAlignedPointerInEmbedderData() is backed by a FixedArray,
@@ -179,6 +181,7 @@ class ModuleWrap;
   V(nsname_string, "nsname")                                                  \
   V(ocsp_request_string, "OCSPRequest")                                       \
   V(onaftershutdown_string, "onaftershutdown")                                \
+  V(onafterwrite_string, "onafterwrite")                                      \
   V(onaltsvc_string, "onaltsvc")                                              \
   V(onchange_string, "onchange")                                              \
   V(onclienthello_string, "onclienthello")                                    \
@@ -309,7 +312,6 @@ class ModuleWrap;
   V(udp_constructor_function, v8::Function)                                   \
   V(vm_parsing_context_symbol, v8::Symbol)                                    \
   V(url_constructor_function, v8::Function)                                   \
-  V(write_wrap_constructor_function, v8::Function)                            \
 
 class Environment;
 
@@ -588,6 +590,16 @@ class Environment {
   inline AliasedBuffer<uint32_t, v8::Uint32Array>&
   should_abort_on_uncaught_toggle();
 
+  enum WriteInfoBufferFields {
+    kStreamWriteAsyncFlag,
+    kStreamWriteError,
+    kStreamDispatchedBytes,
+    kWriteInfoBufferFieldCount
+  };
+
+  inline AliasedBuffer<double, v8::Float64Array>& write_info_buffer();
+  inline void fill_write_info_buffer(const StreamWriteResult& res);
+
   // The necessary API for async_hooks.
   inline double new_async_id();
   inline double execution_async_id();
@@ -755,6 +767,7 @@ class Environment {
   std::vector<double> destroy_async_id_list_;
 
   AliasedBuffer<uint32_t, v8::Uint32Array> should_abort_on_uncaught_toggle_;
+  AliasedBuffer<double, v8::Float64Array> write_info_buffer_;
 
   int should_not_abort_scope_counter_ = 0;
 

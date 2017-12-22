@@ -5,13 +5,18 @@
 
 #include "env.h"
 #include "async_wrap.h"
-#include "req_wrap-inl.h"
 #include "node.h"
 #include "util.h"
 
 #include "v8.h"
 
 namespace node {
+
+struct StreamWriteResult {
+  bool async;
+  int err;
+  size_t bytes;
+};
 
 // Forward declarations
 class StreamBase;
@@ -38,66 +43,6 @@ class StreamReq {
 
  private:
   StreamBase* const stream_;
-};
-
-class WriteWrap : public ReqWrap<uv_write_t>,
-                  public StreamReq<WriteWrap> {
- public:
-  static inline WriteWrap* New(Environment* env,
-                               v8::Local<v8::Object> obj,
-                               StreamBase* stream,
-                               size_t extra = 0);
-  inline void Dispose();
-  inline char* Extra(size_t offset = 0);
-  inline size_t ExtraSize() const;
-
-  size_t self_size() const override { return storage_size_; }
-
-  static WriteWrap* from_req(uv_write_t* req) {
-    return ContainerOf(&WriteWrap::req_, req);
-  }
-
-  static const size_t kAlignSize = 16;
-
-  WriteWrap(Environment* env,
-            v8::Local<v8::Object> obj,
-            StreamBase* stream)
-      : ReqWrap(env, obj, AsyncWrap::PROVIDER_WRITEWRAP),
-        StreamReq<WriteWrap>(stream),
-        storage_size_(0) {
-    Wrap(obj, this);
-  }
-
-  inline void OnDone(int status);  // Just calls stream()->AfterWrite()
-
- protected:
-  WriteWrap(Environment* env,
-            v8::Local<v8::Object> obj,
-            StreamBase* stream,
-            size_t storage_size)
-      : ReqWrap(env, obj, AsyncWrap::PROVIDER_WRITEWRAP),
-        StreamReq<WriteWrap>(stream),
-        storage_size_(storage_size) {
-    Wrap(obj, this);
-  }
-
-  ~WriteWrap() {
-    ClearWrap(object());
-  }
-
-  void* operator new(size_t size) = delete;
-  void* operator new(size_t size, char* storage) { return storage; }
-
-  // This is just to keep the compiler happy. It should never be called, since
-  // we don't use exceptions in node.
-  void operator delete(void* ptr, char* storage) { UNREACHABLE(); }
-
- private:
-  // People should not be using the non-placement new and delete operator on a
-  // WriteWrap. Ensure this never happens.
-  void operator delete(void* ptr) { UNREACHABLE(); }
-
-  const size_t storage_size_;
 };
 
 
@@ -129,9 +74,11 @@ class StreamListener {
   virtual void OnStreamRead(ssize_t nread,
                             const uv_buf_t& buf) = 0;
 
-  // This is called once a Write has finished. `status` may be 0 or,
-  // if negative, a libuv error code.
-  virtual void OnStreamAfterWrite(WriteWrap* w, int status) {}
+  // This is called once an *asynchronousÜ Write has finished.
+  // `status` may be 0 or, if negative, a libuv error code.
+  // For writes that finish synchronously, the `async` flag of the
+  // returned StreamWriteResult needs to be inspected.
+  virtual void OnStreamAfterWrite(int status) {}
   // This is called once (the writable side of) this stream has been shut down.
   // `status` may be 0 or, if negative, a libuv error code.
   virtual void OnStreamAfterShutdown(int status) {}
@@ -159,6 +106,10 @@ class EmitToJSStreamListener : public StreamListener {
  public:
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
   void OnStreamAfterShutdown(int status) override;
+  void OnStreamAfterWrite(int status) override;
+
+ private:
+  void CallWithStatus(v8::Local<v8::Name> cbname, int status);
 };
 
 
@@ -174,8 +125,7 @@ class StreamResource {
   // starting to block the stream; in particular, fully synchronously.
   virtual int DoTryWrite(uv_buf_t** bufs, size_t* count);
   // For stream implementers: Write data to the stream.
-  virtual int DoWrite(WriteWrap* w,
-                      uv_buf_t* bufs,
+  virtual int DoWrite(uv_buf_t* bufs,
                       size_t count,
                       uv_stream_t* send_handle) = 0;
 
@@ -195,6 +145,15 @@ class StreamResource {
   // Shut down this stream.
   virtual int Shutdown();
 
+  // Writes a list of buffers to the stream, first trying synchronously and,
+  // if that is not sufficient, asynchronously.
+  // Note: This is currently unimplemented because it is always overridden
+  // currently, so not worth the work of doing so, but adding a default
+  // implemenation should be trivial if that becomes necessary.
+  virtual StreamWriteResult Write(uv_buf_t* bufs,
+                                  size_t count,
+                                  uv_stream_t* send_handle = nullptr) = 0;
+
   // Transfer ownership of this tream to `listener`. The previous listener
   // will not receive any more callbacks while the new listener was active.
   void PushStreamListener(StreamListener* listener);
@@ -209,7 +168,7 @@ class StreamResource {
   // stream's read byte counter.
   void EmitRead(ssize_t nread, const uv_buf_t& buf = uv_buf_init(nullptr, 0));
   // Call the current listener's OnStreamAfterWrite() method.
-  void EmitAfterWrite(WriteWrap* w, int status);
+  void EmitAfterWrite(int status);
   // Call the current listener's OnStreamAfterShutdown() method.
   void EmitAfterShutdown(int status);
 
@@ -229,9 +188,17 @@ class AsyncTrackingStream : public StreamResource {
   // Shuts down this stream instance, keeping track of async context.
   int Shutdown() override;
 
+  // Writes a list of buffers to the stream, first trying synchronously and,
+  // if that is not sufficient, asynchronously while keeping track of
+  // async context.
+  StreamWriteResult Write(uv_buf_t* bufs,
+                          size_t count,
+                          uv_stream_t* send_handle = nullptr) override;
+
   // This is named `stream_env` to avoid name clashes, because a lot of
   // subclasses are also `BaseObject`s.
   Environment* stream_env() const;
+
  protected:
   explicit AsyncTrackingStream(Environment* env);
 
@@ -239,8 +206,14 @@ class AsyncTrackingStream : public StreamResource {
   // is finished (possibly asynchronously).
   virtual void AfterShutdown(int status);
 
+  // This is called by the stream implementer after a DoWrite() call
+  // is finished (possibly asynchronously).
+  virtual void AfterWrite(int status);
+
  private:
   void StartAsyncOperation(AsyncWrap::ProviderType provider);
+  template<typename Fn>
+  void FinishAsyncOperation(Fn emit_event_cb);
 
   Environment* env_;
   async_context request_async_context_ = { -1, -1 };
@@ -267,9 +240,13 @@ class StreamBase : public AsyncTrackingStream {
 
   void CallJSOnreadMethod(ssize_t nread, v8::Local<v8::Object> buf);
 
-  // This is called by the stream implementer after a DoWrite() call
-  // is finished (possibly asynchronously).
-  virtual void AfterWrite(WriteWrap* req, int status);
+  // These are overridden methods from AsyncTrackingStream that do a
+  // little more bookkeeping; in particular, they store errors on the stream
+  // object and make sure the extra_storage_ field for write buffers is reset.
+  StreamWriteResult Write(uv_buf_t* bufs,
+                          size_t count,
+                          uv_stream_t* send_handle = nullptr) override;
+  void AfterWrite(int status) override;
   void AfterShutdown(int status) override;
 
   v8::Local<v8::Object> GetObject();
@@ -301,7 +278,12 @@ class StreamBase : public AsyncTrackingStream {
   static void JSMethod(const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
+  void SetErrorOnObject();
+  bool AllocateWriteStorage(size_t storage_size);
+  void SetWriteMetadata(bool async, int err, size_t bytes);
+
   EmitToJSStreamListener default_listener_;
+  char* extra_storage_ = nullptr;
 };
 
 }  // namespace node

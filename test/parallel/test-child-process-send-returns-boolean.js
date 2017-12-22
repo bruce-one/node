@@ -1,6 +1,9 @@
 'use strict';
 const common = require('../common');
 
+// libuv does not support uv_try_write() for pipes on Windows.
+const trueExceptOnWindows = common.isWindows ? false : true;
+
 // subprocess.send() will return false if the channel has closed or when the
 // backlog of unsent messages exceeds a threshold that makes it unwise to send
 // more. Otherwise, the method returns true.
@@ -31,28 +34,30 @@ const subScript = fixtures.path('child-process-persistent.js');
   const server = net.createServer(common.mustNotCall()).listen(0, () => {
     const handle = server._handle;
 
-    // Sending a handle and not giving the tickQueue time to acknowledge should
-    // create the internal backlog, but leave it empty.
-    const rv1 = s.send('one', handle, (err) => { if (err) assert.fail(err); });
-    assert.strictEqual(rv1, true);
+    // Sending a handle will always trigger an asynchronous write.
+    const rv1 = s.send('one', handle, (err) => assert.ifError(err));
+    assert.strictEqual(rv1, false);
     // Since the first `send` included a handle (should be unacknowledged),
-    // we can safely queue up only one more message.
-    const rv2 = s.send('two', (err) => { if (err) assert.fail(err); });
-    assert.strictEqual(rv2, true);
-    // The backlog should now be indicate to backoff.
-    const rv3 = s.send('three', (err) => { if (err) assert.fail(err); });
-    assert.strictEqual(rv3, false);
-    const rv4 = s.send('four', (err) => {
+    // subqeuent synchronous writes will always be turned async.
+    const rv2 = s.send('two', common.mustCall((err) => {
       if (err) assert.fail(err);
-      // `send` queue should have been drained.
-      const rv5 = s.send('5', handle, (err) => { if (err) assert.fail(err); });
-      assert.strictEqual(rv5, true);
+      // The backlog should now be clear to backoff.
+      const rv3 = s.send('three', (err) => assert.ifError(err));
+      assert.strictEqual(rv3, trueExceptOnWindows);
+      const rv4 = s.send('four', common.mustCall((err) => {
+        if (err) assert.fail(err);
+        // `send` queue should have been drained.
+        // Handle writes are still asynchronous.
+        const rv5 = s.send('5', handle, (err) => assert.ifError(err));
+        assert.strictEqual(rv5, false);
 
-      // End test and cleanup.
-      s.kill();
-      handle.close();
-      server.close();
-    });
-    assert.strictEqual(rv4, false);
+        // End test and cleanup.
+        s.kill();
+        handle.close();
+        server.close();
+      }));
+      assert.strictEqual(rv4, trueExceptOnWindows);
+    }));
+    assert.strictEqual(rv2, false);
   });
 }
