@@ -7,20 +7,29 @@ const PORT = common.PORT;
 
 const bench = common.createBenchmark(main, {
   len: [102400, 1024 * 1024 * 16],
-  type: ['utf', 'asc', 'buf'],
+  type: ['utf8', 'utf8ascii', 'utf16', 'asc', 'buf'],
+  read_decoded: [1, 0],
   dur: [5],
 });
 
 var chunk;
 var encoding;
 
-function main({ dur, len, type }) {
+function main({ dur, len, type, read_decoded }) {
   switch (type) {
     case 'buf':
       chunk = Buffer.alloc(len, 'x');
       break;
-    case 'utf':
+    case 'utf8':
       encoding = 'utf8';
+      chunk = 'ü'.repeat(len / 2);
+      break;
+    case 'utf8ascii':
+      encoding = 'utf8';
+      chunk = 'x'.repeat(len);
+      break;
+    case 'utf16':
+      encoding = 'utf16le';
       chunk = 'ü'.repeat(len / 2);
       break;
     case 'asc':
@@ -36,6 +45,8 @@ function main({ dur, len, type }) {
 
   // the actual benchmark.
   const server = net.createServer(function(socket) {
+    if (read_decoded && encoding)
+      socket.setEncoding(encoding);
     socket.pipe(writer);
   });
 

@@ -6,6 +6,7 @@
 #include "env.h"
 #include "async_wrap-inl.h"
 #include "node.h"
+#include "string_decoder.h"
 #include "util.h"
 
 #include "v8.h"
@@ -177,11 +178,23 @@ class ReportWritesToJSStreamListener : public StreamListener {
 };
 
 
+enum BufferOwnership {
+  kDoesNotOwnBuffer,
+  kOwnsMallocedBuffer
+};
+
+
 // A default emitter that just pushes data chunks as Buffer instances to
 // JS land via the handle’s .ondata method.
+template <BufferOwnership kBufferOwnership>
 class EmitToJSStreamListener : public ReportWritesToJSStreamListener {
  public:
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
+
+  void SetIncomingEncoding(enum encoding encoding);
+
+ protected:
+  StringDecoder decoder_;
 };
 
 
@@ -270,7 +283,7 @@ class StreamBase : public StreamResource {
   virtual bool IsIPCPipe();
   virtual int GetFD();
 
-  void CallJSOnreadMethod(ssize_t nread, v8::Local<v8::Object> buf);
+  void CallJSOnreadMethod(ssize_t nread, v8::Local<v8::Value> data);
 
   // This is named `stream_env` to avoid name clashes, because a lot of
   // subclasses are also `BaseObject`s.
@@ -314,6 +327,7 @@ class StreamBase : public StreamResource {
   int WriteBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
   template <enum encoding enc>
   int WriteString(const v8::FunctionCallbackInfo<v8::Value>& args);
+  int SetEncoding(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   template <class Base>
   static void GetFD(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -334,7 +348,7 @@ class StreamBase : public StreamResource {
 
  private:
   Environment* env_;
-  EmitToJSStreamListener default_listener_;
+  EmitToJSStreamListener<kOwnsMallocedBuffer> default_listener_;
 
   friend class WriteWrap;
   friend class ShutdownWrap;

@@ -485,7 +485,7 @@ class Http2Priority {
   nghttp2_priority_spec spec;
 };
 
-class Http2StreamListener : public StreamListener {
+class Http2StreamListener : public EmitToJSStreamListener<kDoesNotOwnBuffer> {
  public:
   uv_buf_t OnStreamAlloc(size_t suggested_size) override;
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;

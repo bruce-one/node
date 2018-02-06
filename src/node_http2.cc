@@ -6,6 +6,7 @@
 #include "node_http2_state.h"
 #include "node_internals.h"
 #include "node_perf.h"
+#include "string_decoder-inl.h"
 
 #include <algorithm>
 
@@ -1090,6 +1091,10 @@ void Http2StreamListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
   if (nread < 0) {
     PassReadErrorToPreviousListener(nread);
     return;
+  }
+
+  if (decoder_.Encoding() != BUFFER) {
+    return EmitToJSStreamListener::OnStreamRead(nread, buf);
   }
 
   CHECK(!session->stream_buf_ab_.IsEmpty());

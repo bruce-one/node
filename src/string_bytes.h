@@ -111,6 +111,19 @@ class StringBytes {
                                           enum encoding encoding,
                                           v8::Local<v8::Value>* error);
 
+  // Takes ownership of the buffer.
+  static v8::MaybeLocal<v8::Value> FromMallocedLatin1(
+      v8::Isolate* isolate,
+      char* buf,
+      size_t length,
+      v8::Local<v8::Value>* error);
+
+  static v8::MaybeLocal<v8::Value> FromMallocedUTF16(
+      v8::Isolate* isolate,
+      uint16_t* buf,
+      size_t length,
+      v8::Local<v8::Value>* error);
+
  private:
   static size_t WriteUCS2(char* buf,
                           size_t buflen,
@@ -118,6 +131,9 @@ class StringBytes {
                           int flags,
                           size_t* chars_written);
 };
+
+void force_ascii(const char* src, char* dst, size_t len);
+bool contains_non_ascii(const char* src, size_t len);
 
 }  // namespace node
 

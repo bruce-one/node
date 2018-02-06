@@ -49,7 +49,7 @@ using v8::Value;
 namespace {
 
 template <typename ResourceType, typename TypeName>
-class ExternString: public ResourceType {
+class ExternString : public ResourceType {
  public:
   ~ExternString() override {
     free(const_cast<TypeName*>(data_));
@@ -99,12 +99,6 @@ class ExternString: public ResourceType {
     if (length == 0)
       return String::Empty(isolate);
 
-    if (length < EXTERN_APEX) {
-      MaybeLocal<Value> str = NewSimpleFromCopy(isolate, data, length, error);
-      free(data);
-      return str;
-    }
-
     ExternString* h_str = new ExternString<ResourceType, TypeName>(isolate,
                                                                    data,
                                                                    length);
@@ -149,14 +143,14 @@ typedef ExternString<String::ExternalStringResource,
 template <>
 MaybeLocal<Value> ExternOneByteString::NewExternal(
     Isolate* isolate, ExternOneByteString* h_str) {
-  return String::NewExternalOneByte(isolate, h_str).FromMaybe(Local<Value>());
+  return String::NewExternalOneByte(isolate, h_str).FromMaybe(Local<String>());
 }
 
 
 template <>
 MaybeLocal<Value> ExternTwoByteString::NewExternal(
     Isolate* isolate, ExternTwoByteString* h_str) {
-  return String::NewExternalTwoByte(isolate, h_str).FromMaybe(Local<Value>());
+  return String::NewExternalTwoByte(isolate, h_str).FromMaybe(Local<String>());
 }
 
 template <>
@@ -489,7 +483,7 @@ static bool contains_non_ascii_slow(const char* buf, size_t len) {
 }
 
 
-static bool contains_non_ascii(const char* src, size_t len) {
+bool contains_non_ascii(const char* src, size_t len) {
   if (len < 16) {
     return contains_non_ascii_slow(src, len);
   }
@@ -538,7 +532,7 @@ static void force_ascii_slow(const char* src, char* dst, size_t len) {
 }
 
 
-static void force_ascii(const char* src, char* dst, size_t len) {
+void force_ascii(const char* src, char* dst, size_t len) {
   if (len < 16) {
     force_ascii_slow(src, dst, len);
     return;
@@ -755,6 +749,20 @@ MaybeLocal<Value> StringBytes::Encode(Isolate* isolate,
     ret = StringBytes::Encode(isolate, buf, len, encoding, error);
   }
   return ret;
+}
+
+MaybeLocal<Value> StringBytes::FromMallocedLatin1(Isolate* isolate,
+                                                  char* buf,
+                                                  size_t length,
+                                                  Local<Value>* error) {
+  return ExternOneByteString::New(isolate, buf, length, error);
+}
+
+MaybeLocal<Value> StringBytes::FromMallocedUTF16(Isolate* isolate,
+                                                 uint16_t* buf,
+                                                 size_t length,
+                                                 Local<Value>* error) {
+  return ExternTwoByteString::New(isolate, buf, length, error);
 }
 
 }  // namespace node

@@ -8,6 +8,7 @@
 #include "env-inl.h"
 #include "js_stream.h"
 #include "string_bytes.h"
+#include "string_decoder-inl.h"
 #include "util-inl.h"
 #include "v8.h"
 
@@ -21,6 +22,7 @@ using v8::Context;
 using v8::FunctionCallbackInfo;
 using v8::HandleScope;
 using v8::Integer;
+using v8::Isolate;
 using v8::Local;
 using v8::Number;
 using v8::Object;
@@ -306,12 +308,12 @@ int StreamBase::WriteString(const FunctionCallbackInfo<Value>& args) {
 }
 
 
-void StreamBase::CallJSOnreadMethod(ssize_t nread, Local<Object> buf) {
+void StreamBase::CallJSOnreadMethod(ssize_t nread, Local<Value> data) {
   Environment* env = env_;
 
   Local<Value> argv[] = {
     Integer::New(env->isolate(), nread),
-    buf
+    data
   };
 
   if (argv[1].IsEmpty())
@@ -359,25 +361,99 @@ uv_buf_t StreamListener::OnStreamAlloc(size_t suggested_size) {
 }
 
 
-void EmitToJSStreamListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
+template <BufferOwnership kBufferOwnership>
+void EmitToJSStreamListener<kBufferOwnership>::OnStreamRead(
+    ssize_t nread_, const uv_buf_t& buf) {
   CHECK_NOT_NULL(stream_);
   StreamBase* stream = static_cast<StreamBase*>(stream_);
   Environment* env = stream->stream_env();
-  HandleScope handle_scope(env->isolate());
+  Isolate* isolate = env->isolate();
+  HandleScope handle_scope(isolate);
   Context::Scope context_scope(env->context());
 
-  if (nread <= 0)  {
+  if (nread_ <= 0) {
     free(buf.base);
-    if (nread < 0)
-      stream->CallJSOnreadMethod(nread, Local<Object>());
+    if (nread_ < 0) {
+      if (decoder_.BufferedBytes() > 0) {
+        // Flushes the decoder state.
+        int had_bytes = decoder_.BufferedBytes();
+        Local<String> str = decoder_.FlushData(isolate).ToLocalChecked();
+        if (!str.IsEmpty() && str->Length() > 0)
+          stream->CallJSOnreadMethod(had_bytes, str);
+      }
+
+      stream->CallJSOnreadMethod(nread_, Local<Value>());
+    }
     return;
   }
 
-  CHECK_LE(static_cast<size_t>(nread), buf.len);
+  // Some of the calls below need a size_t* rather than ssize_t*.
+  size_t nread = nread_;
+  CHECK_LE(nread_, buf.len);
   char* base = Realloc(buf.base, nread);
 
-  Local<Object> obj = Buffer::New(env, base, nread).ToLocalChecked();
-  stream->CallJSOnreadMethod(nread, obj);
+  Local<Value> chunk, error;
+  if (kBufferOwnership == kOwnsMallocedBuffer) {
+    // Decode the incoming chunk. We have several fast paths here, because
+    // we know that we own the buffer and can therefore build external strings
+    // from it:
+    if (decoder_.Encoding() == BUFFER) {
+      chunk = Buffer::New(env, base, nread).ToLocalChecked();
+    } else if (decoder_.Encoding() == LATIN1 ||
+               decoder_.Encoding() == ASCII ||
+               (decoder_.Encoding() == UTF8 &&
+                decoder_.BufferedBytes() == 0 &&
+                !contains_non_ascii(base, nread))) {
+      // This string contains only Latin1 data, which means we can use the
+      // incoming buffer directly. For ASCII, we may need to
+      // force the bytes into a 7-bit range.
+      if (decoder_.Encoding() == ASCII)
+        force_ascii(base, base, nread);
+      chunk = StringBytes::FromMallocedLatin1(
+          isolate, base, nread, &error).ToLocalChecked();
+    } else if (decoder_.Encoding() == UCS2 &&
+               decoder_.BufferedBytes() == 0 &&
+               nread % 2 == 0 &&
+               reinterpret_cast<uintptr_t>(base) % 2 == 0 &&
+               // The data should not start with a high surrogate ...
+               (base[1] & 0xFC) != 0xDC &&
+               // ... or end with a low surrogate.
+               (base[nread - 1] & 0xFC) != 0xD8) {
+      // UTF-16LE, the buffer is properly aligned, there is no chunk we'd
+      // need to finish and there are no unexpected surrogates at the ends.
+      if (IsBigEndian())
+        SwapBytes16(base, nread);
+      chunk = StringBytes::FromMallocedUTF16(
+          isolate, reinterpret_cast<uint16_t*>(base), nread / 2, &error)
+              .ToLocalChecked();
+    } else {
+      // Slow (but still pretty fast path): Hand the data over to the decoder.
+      chunk = decoder_.DecodeData(isolate, base, &nread)
+          .ToLocalChecked();
+      free(base);
+    }
+  } else {
+    CHECK_EQ(kBufferOwnership, kDoesNotOwnBuffer);
+    if (decoder_.Encoding() == BUFFER) {
+      chunk = Buffer::Copy(env, base, nread).ToLocalChecked();
+    } else {
+      chunk = decoder_.DecodeData(isolate, base, &nread).ToLocalChecked();
+    }
+  }
+  stream->CallJSOnreadMethod(nread, chunk);
+}
+
+
+template void EmitToJSStreamListener<kOwnsMallocedBuffer>::OnStreamRead(
+    ssize_t nread, const uv_buf_t& buf);
+template void EmitToJSStreamListener<kDoesNotOwnBuffer>::OnStreamRead(
+    ssize_t nread, const uv_buf_t& buf);
+
+
+int StreamBase::SetEncoding(const FunctionCallbackInfo<Value>& args) {
+  default_listener_.SetIncomingEncoding(
+      ParseEncoding(args.GetIsolate(), args[0], BUFFER));
+  return 0;
 }
 
 

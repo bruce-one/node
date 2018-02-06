@@ -149,6 +149,12 @@ inline void StreamResource::EmitWantsWrite(size_t suggested_size) {
   listener_->OnStreamWantsWrite(suggested_size);
 }
 
+template <BufferOwnership kBufferOwnership>
+inline void EmitToJSStreamListener<kBufferOwnership>::SetIncomingEncoding(
+    enum encoding encoding) {
+  decoder_.SetEncoding(encoding);
+}
+
 inline StreamBase::StreamBase(Environment* env) : env_(env) {
   PushStreamListener(&default_listener_);
 }
@@ -341,6 +347,9 @@ void StreamBase::AddMethods(Environment* env,
   env->SetProtoMethod(t,
                       "writeLatin1String",
                       JSMethod<Base, &StreamBase::WriteString<LATIN1> >);
+  env->SetProtoMethod(t,
+                      "setEncoding",
+                      JSMethod<Base, &StreamBase::SetEncoding>);
 }
 
 
