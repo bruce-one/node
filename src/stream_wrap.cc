@@ -262,14 +262,55 @@ void LibuvStreamWrap::SetBlocking(const FunctionCallbackInfo<Value>& args) {
 }
 
 typedef SimpleShutdownWrap<ReqWrap<uv_shutdown_t>> LibuvShutdownWrap;
-typedef SimpleWriteWrap<ReqWrap<uv_write_t>> LibuvWriteWrap;
+class LibuvWriteWrap : public SimpleWriteWrap<ReqWrap<uv_write_t>> {
+ public:
+  LibuvWriteWrap(StreamBase* stream, Local<Object> obj)
+    : SimpleWriteWrap(stream, obj) {}
+  
+#ifdef _WIN32
+  virtual
+#endif
+  inline void LibuvDone(int status) {
+    Done(status);
+  }
+};
+
+#ifndef _WIN32
+typedef LibuvWriteWrap LibuvPipeWriteWrap;
+#else
+class LibuvPipeWriteWrap : public LibuvWriteWrap {
+ public:
+  LibuvPipeWriteWrap(StreamBase* stream, Local<Object> obj)
+    : LibuvWriteWrap(stream, obj) {}
+  
+  void LibuvDone(int status) override {
+    LibuvStreamWrap* stream = static_cast<LibuvStreamWrap*>(this->stream());
+    CHECK(stream->is_named_pipe());
+    fprintf(stderr, "%p->LibuvDone(%d) with %zd pending\n", this, status, pending_buffers.length());
+    if (status == 0 && pending_buffers.length() > 0) {
+      status = stream->DoWrite(this,
+                               *pending_buffers,
+                               pending_buffers.length(),
+                               nullptr);
+    }
+    
+    if (status != 0 || pending_buffers.length() == 0)
+      Done(status);
+  }
+
+  MaybeStackBuffer<uv_buf_t, 5> pending_buffers;
+};
+#endif
 
 ShutdownWrap* LibuvStreamWrap::CreateShutdownWrap(Local<Object> object) {
   return new LibuvShutdownWrap(this, object);
 }
 
 WriteWrap* LibuvStreamWrap::CreateWriteWrap(Local<Object> object) {
-  return new LibuvWriteWrap(this, object);
+  if (is_named_pipe())
+    return new LibuvPipeWriteWrap(this, object);
+  else
+    return new LibuvWriteWrap(this, object);
 }
 
 
@@ -338,6 +379,11 @@ int LibuvStreamWrap::DoWrite(WriteWrap* req_wrap,
                              uv_stream_t* send_handle) {
   LibuvWriteWrap* w = static_cast<LibuvWriteWrap*>(req_wrap);
   int r;
+#ifdef _WIN32
+  size_t real_count = count;
+  if (is_named_pipe())
+    count = 1;
+#endif
   if (send_handle == nullptr) {
     r = uv_write(w->req(), stream(), bufs, count, AfterUvWrite);
   } else {
@@ -357,6 +403,20 @@ int LibuvStreamWrap::DoWrite(WriteWrap* req_wrap,
 
   w->Dispatched();
 
+#ifdef _WIN32
+  if (is_named_pipe()) {
+    fprintf(stderr, "Writing %zu buffers for %p, head = [%p,%d] queuing...\n", real_count, w, bufs[0].base, (int)bufs[0].len);
+    LibuvPipeWriteWrap* pww = static_cast<LibuvPipeWriteWrap*>(w);
+    if (real_count > 1) {
+      pww->pending_buffers.AllocateSufficientStorage(real_count - 1);
+      memmove(*pww->pending_buffers,
+              bufs + 1,
+              sizeof(uv_buf_t) * (real_count - 1));
+    }
+    pww->pending_buffers.SetLength(real_count - 1);
+  }
+#endif
+
   return r;
 }
 
@@ -368,7 +428,9 @@ void LibuvStreamWrap::AfterUvWrite(uv_write_t* req, int status) {
   CHECK_NE(req_wrap, nullptr);
   HandleScope scope(req_wrap->env()->isolate());
   Context::Scope context_scope(req_wrap->env()->context());
-  req_wrap->Done(status);
+  if (static_cast<LibuvStreamWrap*>(req_wrap->stream())->is_named_pipe())
+    fprintf(stderr, "AfterUvWrite(%p, %d)\n", req_wrap, status);
+  req_wrap->LibuvDone(status);
 }
 
 }  // namespace node
