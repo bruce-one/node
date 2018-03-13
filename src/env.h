@@ -291,6 +291,7 @@ struct PackageConfig {
   V(writable_string, "writable")                                              \
   V(write_host_object_string, "_writeHostObject")                             \
   V(write_queue_size_string, "writeQueueSize")                                \
+  V(write_wrap_string, "writeWrap")                                           \
   V(x_forwarded_string, "x-forwarded-for")                                    \
   V(zero_return_string, "ZERO_RETURN")
 

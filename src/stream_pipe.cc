@@ -123,7 +123,7 @@ void StreamPipe::ReadableListener::OnStreamRead(ssize_t nread,
     previous_listener_->OnStreamRead(nread, uv_buf_init(nullptr, 0));
     // If we’re not writing, close now. Otherwise, we’ll do that in
     // `OnStreamAfterWrite()`.
-    if (!pipe->is_writing_) {
+    if (pipe->pending_writes_ == 0) {
       pipe->ShutdownWritable();
       pipe->Unpipe();
     }
@@ -134,13 +134,37 @@ void StreamPipe::ReadableListener::OnStreamRead(ssize_t nread,
 }
 
 void StreamPipe::ProcessData(size_t nread, const uv_buf_t& buf) {
+#ifdef DEBUG
+  v8::SealHandleScope seal_handle_scope(env()->isolate());
+#endif
+  Local<Object> write_wrap_obj;
+  if (pending_writes_ == 0) {
+    write_wrap_obj = StrongPersistentToLocal(cached_write_wrap_obj_);
+#ifdef DEBUG
+    {
+      HandleScope handle_scope(env()->isolate());
+      CHECK_EQ(write_wrap_obj, cached_write_wrap_obj_.Get(env()->isolate()));
+    }
+#endif
+  }
+
   uv_buf_t buffer = uv_buf_init(buf.base, nread);
-  StreamWriteResult res = sink()->Write(&buffer, 1);
+  StreamWriteResult res = sink()->Write(&buffer, 1, nullptr, write_wrap_obj);
+
+  if (write_wrap_obj.IsEmpty() && res.wrap != nullptr && pending_writes_ == 0) {
+    HandleScope handle_scope(env()->isolate());
+    cached_write_wrap_obj_.Reset(env()->isolate(), res.wrap->object());
+    cached_write_wrap_obj_.SetWeak();
+    object()->Set(env()->context(),
+                  env()->write_wrap_string(),
+                  res.wrap->object()).FromJust();
+  }
+
   if (!res.async) {
     free(buf.base);
     writable_listener_.OnStreamAfterWrite(nullptr, res.err);
   } else {
-    is_writing_ = true;
+    pending_writes_++;
     is_reading_ = false;
     res.wrap->SetAllocatedStorage(buf.base, buf.len);
     source()->ReadStop();
@@ -154,7 +178,7 @@ void StreamPipe::ShutdownWritable() {
 void StreamPipe::WritableListener::OnStreamAfterWrite(WriteWrap* w,
                                                       int status) {
   StreamPipe* pipe = ContainerOf(&StreamPipe::writable_listener_, this);
-  pipe->is_writing_ = false;
+  pipe->pending_writes_--;
   if (pipe->is_eof_) {
     AsyncScope async_scope(pipe);
     pipe->ShutdownWritable();

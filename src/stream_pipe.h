@@ -4,6 +4,7 @@
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
 #include "stream_base.h"
+#include "node_persistent.h"
 
 namespace node {
 
@@ -27,8 +28,8 @@ class StreamPipe : public AsyncWrap {
   void ShutdownWritable();
   void FlushToWritable();
 
+  int pending_writes_ = 0;
   bool is_reading_ = false;
-  bool is_writing_ = false;
   bool is_eof_ = false;
   bool is_closed_ = true;
 
@@ -59,6 +60,8 @@ class StreamPipe : public AsyncWrap {
 
   ReadableListener readable_listener_;
   WritableListener writable_listener_;
+
+  Persistent<v8::Object> cached_write_wrap_obj_;
 };
 
 }  // namespace node
