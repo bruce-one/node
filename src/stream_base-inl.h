@@ -219,7 +219,7 @@ inline StreamWriteResult StreamBase::Write(
   WriteWrap* req_wrap = CreateWriteWrap(req_wrap_obj);
 
   err = DoWrite(req_wrap, bufs, count, send_handle);
-  bool async = err == 0;
+  bool async = err == 0 || req_wrap == nullptr;
 
   if (!async) {
     req_wrap->Dispose();

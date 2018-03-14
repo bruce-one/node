@@ -225,6 +225,7 @@ struct PackageConfig {
   V(onunpipe_string, "onunpipe")                                              \
   V(onwrite_string, "onwrite")                                                \
   V(openssl_error_stack, "opensslErrorStack")                                 \
+  V(options_string, "options")                                                \
   V(output_string, "output")                                                  \
   V(order_string, "order")                                                    \
   V(owner_string, "owner")                                                    \

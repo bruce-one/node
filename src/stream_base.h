@@ -297,6 +297,8 @@ class StreamBase : public StreamResource {
   // For example, a subclass Foo could create a FooWriteWrap or FooShutdownWrap
   // (inheriting from ShutdownWrap/WriteWrap) that has extra fields, like
   // an associated libuv request.
+  // These methods may return `nullptr` if they know that the operation
+  // will finish synchronously.
   virtual ShutdownWrap* CreateShutdownWrap(v8::Local<v8::Object> object);
   virtual WriteWrap* CreateWriteWrap(v8::Local<v8::Object> object);
 
