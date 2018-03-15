@@ -8,5 +8,5 @@ if (process.argv[2] === 'child') {
 } else {
   const { stdout } =
     child_process.spawnSync(process.execPath, [__filename, 'child']);
-  assert.strictEqual(stdout.toString(), 'cleanup(42)\n');
+  assert.strictEqual(stdout.toString().trim(), 'cleanup(42)');
 }
