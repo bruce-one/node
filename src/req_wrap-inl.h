@@ -43,9 +43,9 @@ void ReqWrap<T>::Cancel() {
   uv_cancel(reinterpret_cast<uv_req_t*>(&req_));
 }
 
-/* Below is dark template magic designed to invoke libuv functions that
- * initialize uv_req_t instances in a unified fashion, to allow easier
- * tracking of active/inactive requests. */
+// Below is dark template magic designed to invoke libuv functions that
+// initialize uv_req_t instances in a unified fashion, to allow easier
+// tracking of active/inactive requests.
 
 // Invoke a generic libuv function that initializes uv_req_t instances.
 // This is, unfortunately, necessary since they come in three different
@@ -105,15 +105,15 @@ struct MakeLibuvRequestCallback {
 // callbacks use.
 template <typename ReqT, typename... Args>
 struct MakeLibuvRequestCallback<ReqT, void(*)(ReqT*, Args...)> {
-  typedef void(*T)(ReqT* req, Args... args);
+  using F = void(*)(ReqT* req, Args... args);
 
   static void Wrapper(ReqT* req, Args... args) {
     ReqWrap<ReqT>* req_wrap = ContainerOf(&ReqWrap<ReqT>::req_, req);
-    T original_callback = reinterpret_cast<T>(req_wrap->original_callback_);
+    F original_callback = reinterpret_cast<F>(req_wrap->original_callback_);
     original_callback(req, args...);
   }
 
-  static T For(ReqWrap<ReqT>* req_wrap, T v) {
+  static F For(ReqWrap<ReqT>* req_wrap, F v) {
     CHECK_EQ(req_wrap->original_callback_, nullptr);
     req_wrap->original_callback_ =
         reinterpret_cast<typename ReqWrap<ReqT>::callback_t>(v);

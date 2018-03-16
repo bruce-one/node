@@ -522,7 +522,7 @@ ChannelWrap::~ChannelWrap() {
 void ChannelWrap::CleanupTimer() {
   if (timer_handle_ == nullptr) return;
 
-  env()->CloseHandle(timer_handle_, [](uv_timer_t* handle){ delete handle; });
+  env()->CloseHandle(timer_handle_, [](uv_timer_t* handle) { delete handle; });
   timer_handle_ = nullptr;
 }
 
@@ -1967,7 +1967,7 @@ void GetNameInfo(const FunctionCallbackInfo<Value>& args) {
 
   int err = req_wrap->Dispatch(uv_getnameinfo,
                                AfterGetNameInfo,
-                               (struct sockaddr*)&addr,
+                               reinterpret_cast<struct sockaddr*>(&addr),
                                NI_NAMEREQD);
   if (err)
     delete req_wrap;
