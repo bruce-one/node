@@ -314,8 +314,10 @@ void Environment::RunCleanup() {
       return a.insertion_order_counter_ > b.insertion_order_counter_;
     });
 
-    for (const CleanupHookCallback& cb : callbacks)
-      cb.fun_(cb.arg_);
+    for (const CleanupHookCallback& cb : callbacks) {
+      cb.fn_(cb.arg_);
+      CleanupHandles();
+    }
   }
 }
 

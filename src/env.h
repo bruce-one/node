@@ -860,7 +860,7 @@ class Environment {
   static void CheckImmediate(uv_check_t* handle);
 
   struct CleanupHookCallback {
-    void (*fun_)(void*);
+    void (*fn_)(void*);
     void* arg_;
 
     // We keep track of the insertion order for these objects, so that we can
@@ -872,7 +872,7 @@ class Environment {
       inline size_t operator()(const CleanupHookCallback& cb) const;
     };
 
-    // Compares by `fun_` and `arg_` being equal.
+    // Compares by `fn_` and `arg_` being equal.
     struct Equal {
       inline bool operator()(const CleanupHookCallback& a,
                              const CleanupHookCallback& b) const;

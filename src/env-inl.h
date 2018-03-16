@@ -640,7 +640,7 @@ size_t Environment::CleanupHookCallback::Hash::operator()(
 
 bool Environment::CleanupHookCallback::Equal::operator()(
     const CleanupHookCallback& a, const CleanupHookCallback& b) const {
-  return a.fun_ == b.fun_ && a.arg_ == b.arg_;
+  return a.fn_ == b.fn_ && a.arg_ == b.arg_;
 }
 
 #define VP(PropertyName, StringValue) V(v8::Private, PropertyName)
