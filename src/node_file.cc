@@ -112,14 +112,10 @@ using v8::Value;
 
 #define GET_OFFSET(a) ((a)->IsNumber() ? (a).As<Integer>()->Value() : -1)
 
-// Convert a C++ lambda function to a raw, C-style function.
+// We sometimes need to convert a C++ lambda function to a raw C-style function.
 // This is helpful, because ReqWrap::Dispatch() does not recognize lambda
 // functions, and thus does not wrap them properly.
 typedef void(*uv_fs_callback_t)(uv_fs_t*);
-template<typename T>
-inline uv_fs_callback_t FsCallback(T cb) {
-  return cb;
-}
 
 // The FileHandle object wraps a file descriptor and will close it on garbage
 // collection if necessary. If that happens, a process warning will be
@@ -247,7 +243,7 @@ inline MaybeLocal<Promise> FileHandle::ClosePromise() {
   if (!closed_ && !closing_) {
     closing_ = true;
     CloseReq* req = new CloseReq(env(), promise, object());
-    auto AfterClose = FsCallback([](uv_fs_t* req) {
+    auto AfterClose = uv_fs_callback_t{[](uv_fs_t* req) {
       CloseReq* close = static_cast<CloseReq*>(req->data);
       CHECK_NE(close, nullptr);
       close->file_handle()->AfterClose();
@@ -258,7 +254,7 @@ inline MaybeLocal<Promise> FileHandle::ClosePromise() {
         close->Resolve();
       }
       delete close;
-    });
+    }};
     int ret = req->Dispatch(uv_fs_close, fd_, AfterClose);
     if (ret < 0) {
       req->Reject(UVException(isolate, ret, "close"));
@@ -347,7 +343,7 @@ int FileHandle::ReadStart() {
                           &current_read_->buffer_,
                           1,
                           read_offset_,
-                          FsCallback([](uv_fs_t* req) {
+                          uv_fs_callback_t{[](uv_fs_t* req) {
     FileHandle* handle;
     {
       FileHandleReadWrap* req_wrap = FileHandleReadWrap::from_req(req);
@@ -400,7 +396,7 @@ int FileHandle::ReadStart() {
     // Start over, if EmitRead() didn’t tell us to stop.
     if (handle->reading_)
       handle->ReadStart();
-  }));
+  }});
 
   return 0;
 }
@@ -419,7 +415,7 @@ ShutdownWrap* FileHandle::CreateShutdownWrap(Local<Object> object) {
 int FileHandle::DoShutdown(ShutdownWrap* req_wrap) {
   FileHandleCloseWrap* wrap = static_cast<FileHandleCloseWrap*>(req_wrap);
   closing_ = true;
-  wrap->Dispatch(uv_fs_close, fd_, FsCallback([](uv_fs_t* req) {
+  wrap->Dispatch(uv_fs_close, fd_, uv_fs_callback_t{[](uv_fs_t* req) {
     FileHandleCloseWrap* wrap = static_cast<FileHandleCloseWrap*>(
         FileHandleCloseWrap::from_req(req));
     FileHandle* handle = static_cast<FileHandle*>(wrap->stream());
@@ -428,7 +424,7 @@ int FileHandle::DoShutdown(ShutdownWrap* req_wrap) {
     int result = req->result;
     uv_fs_req_cleanup(req);
     wrap->Done(result);
-  }));
+  }});
 
   return 0;
 }
