@@ -36,6 +36,7 @@ void ReqWrap<T>::Dispatched() {
 template <typename T>
 void ReqWrap<T>::Reset() {
   original_callback_ = nullptr;
+  req_.data = nullptr;
 }
 
 template <typename T>
@@ -45,7 +46,8 @@ ReqWrap<T>* ReqWrap<T>::from_req(T* req) {
 
 template <typename T>
 void ReqWrap<T>::Cancel() {
-  uv_cancel(reinterpret_cast<uv_req_t*>(&req_));
+  if (req_.data == this)  // Only cancel if already dispatched.
+    uv_cancel(reinterpret_cast<uv_req_t*>(&req_));
 }
 
 // Below is dark template magic designed to invoke libuv functions that
