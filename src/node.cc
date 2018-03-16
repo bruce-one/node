@@ -4421,7 +4421,7 @@ Environment* CreateEnvironment(IsolateData* isolate_data,
 
 
 void FreeEnvironment(Environment* env) {
-  env->CleanupHandles();
+  env->RunCleanup();
   delete env;
 }
 
