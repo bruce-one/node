@@ -670,6 +670,9 @@ class Environment {
                               const char* path = nullptr,
                               const char* dest = nullptr);
 
+  // If this flag is set, calls into JS (if they would be observable
+  // from userland) must be avoided.  This flag does not indicate whether
+  // calling into JS is allowed from a VM perspective at this point.
   inline bool can_call_into_js() const;
   inline void set_can_call_into_js(bool can_call_into_js);
 
