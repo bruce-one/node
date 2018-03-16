@@ -20,6 +20,8 @@ ReqWrap<T>::ReqWrap(Environment* env,
   // FIXME(bnoordhuis) The fact that a reinterpret_cast is needed is
   // arguably a good indicator that there should be more than one queue.
   env->req_wrap_queue()->PushBack(reinterpret_cast<ReqWrap<uv_req_t>*>(this));
+
+  Reset();
 }
 
 template <typename T>
