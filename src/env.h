@@ -865,7 +865,7 @@ class Environment {
 
     // We keep track of the insertion order for these objects, so that we can
     // call the callbacks in reverse order when we are cleaning up.
-    int64_t insertion_order_counter_;
+    uint64_t insertion_order_counter_;
 
     // Only hashes `arg_`, since that is usually enough to identify the hook.
     struct Hash {
@@ -883,7 +883,7 @@ class Environment {
   std::unordered_set<CleanupHookCallback,
                      CleanupHookCallback::Hash,
                      CleanupHookCallback::Equal> cleanup_hooks_;
-  int64_t cleanup_hook_counter_ = 0;
+  uint64_t cleanup_hook_counter_ = 0;
 
   static void EnvPromiseHook(v8::PromiseHookType type,
                              v8::Local<v8::Promise> promise,
