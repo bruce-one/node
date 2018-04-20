@@ -23,7 +23,7 @@
 #include "node_buffer.h"
 #include "node_internals.h"
 
-#include "async_wrap-inl.h"
+#include "req_wrap-inl.h"
 #include "stream_base-inl.h"
 #include "env-inl.h"
 #include "util-inl.h"
@@ -660,6 +660,20 @@ void Initialize(Local<Object> target,
   target->Set(env->context(),
               FIXED_ONE_BYTE_STRING(env->isolate(), "ZLIB_VERSION"),
               FIXED_ONE_BYTE_STRING(env->isolate(), ZLIB_VERSION)).FromJust();
+
+#define ZLIB_OPTION_FIELD(name) do {                 \
+    const int name = ZlibStream::name;               \
+    NODE_DEFINE_CONSTANT(target, name);              \
+  } while(0)
+
+  ZLIB_OPTION_FIELD(kFlushFlag);
+  ZLIB_OPTION_FIELD(kLevel);
+  ZLIB_OPTION_FIELD(kMemLevel);
+  ZLIB_OPTION_FIELD(kMode);
+  ZLIB_OPTION_FIELD(kStrategy);
+  ZLIB_OPTION_FIELD(kWindowBits);
+  ZLIB_OPTION_FIELD(kIsAsync);
+  ZLIB_OPTION_FIELD(kOptionFieldCount);
 }
 
 }  // anonymous namespace
