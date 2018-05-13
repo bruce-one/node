@@ -14,10 +14,36 @@ namespace worker {
 class MessagePortData;
 class MessagePort;
 
-// Represents a single communication message.
+enum MessageFlag {
+  // The default message type: No special handling, this is a userland message.
+  kMessageFlagNone = 0,
+
+  // Generated in C++, handled in C++. These error codes are defined here
+  // because they have significance for the MessagePort API itself:
+
+  // Stop the receiving thread. In particular, also stop dispatching messages
+  // from the receiving end.
+  kMessageFlagStopThreadOrder = 1,
+
+  // Inform the receiving message port that the peer’s thread has been stopped.
+  kMessageFlagThreadStopped = 2,
+
+  kMessageFlagMaxHandledInternally = 2,
+
+  // Generic offset for use by the JS core modules.
+  kMessageFlagCustomOffset = 100
+
+  // Any further flagged message codes are defined by the modules that use them.
+};
+
+// Represents a single communication message. The only non-standard extension
+// here is passing of a separate flag that the Workers implementation uses
+// for internal cross-thread information passing.
 class Message {
  public:
-  explicit Message(MallocedBuffer<char>&& payload = MallocedBuffer<char>());
+  explicit Message(MallocedBuffer<char>&& payload = MallocedBuffer<char>(),
+                   MessageFlag flag = kMessageFlagNone);
+  explicit Message(MessageFlag flag);
 
   Message(Message&& other) = default;
   Message& operator=(Message&& other) = default;
@@ -45,6 +71,7 @@ class Message {
   void AddMessagePort(std::unique_ptr<MessagePortData>&& data);
 
  private:
+  MessageFlag flag_ = kMessageFlagNone;
   MallocedBuffer<char> main_message_buf_;
   std::vector<MallocedBuffer<char>> array_buffer_contents_;
   std::vector<SharedArrayBufferMetadataReference> shared_array_buffers_;
@@ -107,17 +134,27 @@ class MessagePortData {
 // new incoming messages.
 class MessagePort : public HandleWrap {
  public:
+  // Listener interface that is used for C++-to-C++ status indication.
+  class FlaggedMessageListener {
+   public:
+    virtual ~FlaggedMessageListener() {}
+    virtual void HandleMessage(MessageFlag flag) = 0;
+  };
+
   // Create a new MessagePort. The `context` argument specifies the Context
   // instance that is used for creating the values emitted from this port.
   MessagePort(Environment* env,
               v8::Local<v8::Context> context,
-              v8::Local<v8::Object> wrap);
+              v8::Local<v8::Object> wrap,
+              std::unique_ptr<FlaggedMessageListener>&& listener);
   ~MessagePort();
 
   // Create a new message port instance, optionally over an existing
   // `MessagePortData` object.
   static MessagePort* New(Environment* env,
                           v8::Local<v8::Context> context,
+                          std::unique_ptr<FlaggedMessageListener> listener
+                              = nullptr,
                           std::unique_ptr<MessagePortData> data = nullptr);
 
   // Send a message, i.e. deliver it into the sibling's incoming queue.
@@ -149,9 +186,13 @@ class MessagePort : public HandleWrap {
   std::unique_ptr<MessagePortData> Detach();
 
   // Returns true if `Detach()` may be called on this port. This is currently
-  // always true.
+  // true whenever there is no listener for flagged messages.
   bool IsTransferable() const;
   bool IsSiblingClosed() const;
+
+  // Mark this MessagePort as a privileged port, i.e. one that doesn't discard
+  // flags set on incoming messages.
+  void MarkAsPrivileged();
 
   // Allow a half-open state.
   void DoNotCloseWhenSiblingCloses();
@@ -165,6 +206,8 @@ class MessagePort : public HandleWrap {
   inline uv_async_t* async();
 
   std::unique_ptr<MessagePortData> data_ = nullptr;
+  std::unique_ptr<FlaggedMessageListener> flagged_message_listener_ = nullptr;
+  bool is_privileged_ = false;
   bool close_when_sibling_closes_ = true;
 
   friend class MessagePortData;

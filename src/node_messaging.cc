@@ -17,6 +17,8 @@ using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
 using v8::HandleScope;
+using v8::Int32;
+using v8::Integer;
 using v8::Isolate;
 using v8::Just;
 using v8::Local;
@@ -33,8 +35,10 @@ using v8::ValueSerializer;
 namespace node {
 namespace worker {
 
-Message::Message(MallocedBuffer<char>&& buffer)
-    : main_message_buf_(std::move(buffer)) {}
+Message::Message(MallocedBuffer<char>&& buffer, MessageFlag flag)
+    : flag_(flag), main_message_buf_(std::move(buffer)) {}
+
+Message::Message(MessageFlag flag) : Message(MallocedBuffer<char>(), flag) {}
 
 namespace {
 
@@ -81,14 +85,27 @@ class DeserializerDelegate : public ValueDeserializer::Delegate {
 
 MaybeLocal<Value> Message::Deserialize(Environment* env,
                                        Local<Context> context) {
+  MallocedBuffer<char> raw_data = std::move(main_message_buf_);
   EscapableHandleScope handle_scope(env->isolate());
   Context::Scope context_scope(context);
+  if (flag_ != kMessageFlagNone &&
+      flag_ < kMessageFlagCustomOffset) {
+    // This is for messages generated in C++ with the expectation that they
+    // are handled in JS, e.g. serialized error messages from workers.
+    CHECK(array_buffer_contents_.empty());
+    CHECK(shared_array_buffers_.empty());
+    CHECK(message_ports_.empty());
+    return handle_scope.Escape(
+        Buffer::New(env, raw_data.release(), raw_data.size)
+            .FromMaybe(Local<Value>()));
+  }
 
   // Create all necessary MessagePort handles.
   std::vector<MessagePort*> ports(message_ports_.size());
   for (uint32_t i = 0; i < message_ports_.size(); ++i) {
     ports[i] = MessagePort::New(env,
                                 context,
+                                nullptr,
                                 std::move(message_ports_[i]));
     if (ports[i] == nullptr)
       return MaybeLocal<Value>();
@@ -109,8 +126,8 @@ MaybeLocal<Value> Message::Deserialize(Environment* env,
   DeserializerDelegate delegate(this, env, ports, shared_array_buffers);
   ValueDeserializer deserializer(
       env->isolate(),
-      reinterpret_cast<const uint8_t*>(main_message_buf_.data),
-      main_message_buf_.size,
+      reinterpret_cast<const uint8_t*>(raw_data.data),
+      raw_data.size,
       &delegate);
   delegate.deserializer = &deserializer;
 
@@ -334,12 +351,14 @@ MessagePort::~MessagePort() {
 
 MessagePort::MessagePort(Environment* env,
                          Local<Context> context,
-                         Local<Object> wrap)
+                         Local<Object> wrap,
+                         std::unique_ptr<FlaggedMessageListener>&& listener)
   : HandleWrap(env,
                wrap,
                reinterpret_cast<uv_handle_t*>(new uv_async_t()),
                AsyncWrap::PROVIDER_MESSAGEPORT),
-    data_(new MessagePortData(this)) {
+    data_(new MessagePortData(this)),
+    flagged_message_listener_(std::move(listener)) {
   auto onmessage = [](uv_async_t* handle) {
     // Called when data has been put into the queue.
     MessagePort* channel = static_cast<MessagePort*>(handle->data);
@@ -382,12 +401,13 @@ void MessagePort::New(const FunctionCallbackInfo<Value>& args) {
   Local<Context> context = args.This()->CreationContext();
   Context::Scope context_scope(context);
 
-  new MessagePort(env, context, args.This());
+  new MessagePort(env, context, args.This(), nullptr);
 }
 
 MessagePort* MessagePort::New(
     Environment* env,
     Local<Context> context,
+    std::unique_ptr<FlaggedMessageListener> listener,
     std::unique_ptr<MessagePortData> data) {
   Context::Scope context_scope(context);
   Local<Function> ctor;
@@ -408,6 +428,7 @@ MessagePort* MessagePort::New(
     if (port->data_->started_)
       port->TriggerAsync();
   }
+  port->flagged_message_listener_ = std::move(listener);
   return port;
 }
 
@@ -429,6 +450,26 @@ void MessagePort::OnMessage() {
       data_->incoming_messages_.pop_front();
     }
 
+    {
+      if (received.flag_ != kMessageFlagNone &&
+          received.flag_ <= kMessageFlagMaxHandledInternally) {
+        // This means the message was generated in C++ and is expected to be
+        // handled in C++.
+        CHECK(flagged_message_listener_);
+        flagged_message_listener_->HandleMessage(received.flag_);
+        if (received.flag_ == kMessageFlagStopThreadOrder) {
+          // Break out of the loop to exit as soon as possible. There is not
+          // going to be any more JS execution on this thread anyway.
+          {
+            Mutex::ScopedLock lock(data_->mutex_);
+            data_->started_ = false;
+          }
+          return;
+        }
+        continue;
+      }
+    }
+
     if (!env()->can_call_into_js()) {
       // In this case there is nothing to do but to drain the current queue.
       continue;
@@ -440,11 +481,15 @@ void MessagePort::OnMessage() {
       Local<Context> context = object()->CreationContext();
       Context::Scope context_scope(context);
       Local<Value> args[] = {
-        received.Deserialize(env(), context).FromMaybe(Local<Value>())
+        received.Deserialize(env(), context).FromMaybe(Local<Value>()),
+        Integer::New(env()->isolate(), received.flag_)
       };
 
       if (args[0].IsEmpty() ||
-          MakeCallback(env()->onmessage_string(), 1, args).IsEmpty()) {
+          MakeCallback(env()->onmessage_string(),
+                       is_privileged_ ? arraysize(args) : 1,
+                       args)
+              .IsEmpty()) {
         // Re-schedule OnMessage() execution in case of failure.
         if (data_)
           TriggerAsync();
@@ -485,7 +530,11 @@ std::unique_ptr<MessagePortData> MessagePort::Detach() {
 }
 
 bool MessagePort::IsTransferable() const {
-  return true;
+  return !flagged_message_listener_;
+}
+
+void MessagePort::MarkAsPrivileged() {
+  is_privileged_ = true;
 }
 
 void MessagePort::Send(Message&& message) {
@@ -499,7 +548,11 @@ void MessagePort::Send(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   if (args.Length() == 0)
     return;
-  Message msg;
+  MessageFlag flag = kMessageFlagNone;
+  if (args[2]->IsInt32() && is_privileged_) {
+    flag = static_cast<MessageFlag>(args[2].As<Int32>()->Value());
+  }
+  Message msg(flag);
   if (msg.Serialize(env, object()->CreationContext(), args[0], args[1])
           .IsNothing()) {
     return;
