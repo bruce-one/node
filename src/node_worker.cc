@@ -8,6 +8,28 @@
 #include "async_wrap.h"
 #include "async_wrap-inl.h"
 
+#if defined(__linux__)
+#include <features.h>
+#endif
+
+#if defined(__linux__) && !defined(__GLIBC__) || \
+    defined(__UCLIBC__) || \
+    defined(_AIX)
+#define HAVE_EXECINFO_H 0
+#else
+#define HAVE_EXECINFO_H 1
+#endif
+
+#if HAVE_EXECINFO_H
+#include <cxxabi.h>
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <stdio.h>
+#endif
+
+#include <sys/mman.h>
+#include <unistd.h>
+
 using v8::ArrayBuffer;
 using v8::Context;
 using v8::Function;
@@ -297,6 +319,28 @@ void Worker::OnThreadStopped() {
   MakeWeak();
 }
 
+static std::string display_symbol(void* sym) {
+  if (sym == nullptr)
+    return "[null]";
+  Dl_info info;
+  const bool have_info = dladdr(sym, &info);
+  std::string ret;
+  if (!have_info || info.dli_sname == nullptr) {
+    ret = "[unknown]";
+  } else if (char* demangled = abi::__cxa_demangle(info.dli_sname, 0, 0, 0)) {
+    ret = demangled;
+    free(demangled);
+  } else {
+    ret = info.dli_sname;
+  }
+  if (have_info && info.dli_fname != nullptr) {
+    ret += " [";
+    ret += info.dli_fname;
+    ret +="]";
+  }
+  return ret;
+}
+
 Worker::~Worker() {
   Mutex::ScopedLock lock(mutex_);
   JoinThread();
@@ -304,7 +348,17 @@ Worker::~Worker() {
   CHECK(stopped_);
   CHECK(thread_joined_);
   CHECK_EQ(child_port_, nullptr);
-  CHECK_EQ(uv_loop_close(&loop_), 0);
+  if (uv_loop_close(&loop_) != 0) {
+    uv_walk(&loop_, [](uv_handle_t* handle, void* arg) {
+      void* field = nullptr;
+      if (msync(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(handle->data) &~ static_cast<uintptr_t>(getpagesize()-1)), getpagesize(), 0) == 0)
+        field = *(void**)handle->data;
+      fprintf(stderr, "[%p] %s | close = %p %s | data = %p (%p %s)\n", handle, uv_handle_type_name(handle->type),
+          (void*)handle->close_cb, display_symbol((void*)handle->close_cb).c_str(),
+          handle->data, field, display_symbol(field).c_str());
+    }, nullptr);
+    CHECK(0 && "uv_loop_close() while having open handles");
+  }
 
   // This has most likely already happened within the worker thread -- this
   // is just in case Worker creation failed early.

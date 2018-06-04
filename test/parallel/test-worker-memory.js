@@ -1,4 +1,4 @@
-// Flags: --experimental-worker
+// Flags: --experimental-worker --expose-gc
 'use strict';
 const common = require('../common');
 const assert = require('assert');
@@ -26,8 +26,9 @@ function run(n, done) {
 const startStats = process.memoryUsage();
 let finished = 0;
 for (let i = 0; i < numWorkers; ++i) {
-  run(60 / numWorkers, () => {
+  run(10 / numWorkers, () => {
     if (++finished === numWorkers) {
+      global.gc();
       const finishStats = process.memoryUsage();
       // A typical value for this ratio would be ~1.15.
       // 5 as a upper limit is generous, but the main point is that we
