@@ -70,6 +70,7 @@ PerIsolatePlatformData::PerIsolatePlatformData(
   CHECK_EQ(0, uv_async_init(loop, flush_tasks_, FlushTasks));
   flush_tasks_->data = static_cast<void*>(this);
   uv_unref(reinterpret_cast<uv_handle_t*>(flush_tasks_));
+  fprintf(stderr, "New PIPD %p %p [%p, %p]\n", this, flush_tasks_, isolate, loop);
 }
 
 void PerIsolatePlatformData::FlushTasks(uv_async_t* handle) {
@@ -82,6 +83,7 @@ void PerIsolatePlatformData::PostIdleTask(std::unique_ptr<v8::IdleTask> task) {
 }
 
 void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
+  fprintf(stderr, "PIPD::PostTask %p %p [%p]\n", this, flush_tasks_, task.get());
   CHECK_NE(flush_tasks_, nullptr);
   foreground_tasks_.Push(std::move(task));
   uv_async_send(flush_tasks_);
@@ -89,6 +91,7 @@ void PerIsolatePlatformData::PostTask(std::unique_ptr<Task> task) {
 
 void PerIsolatePlatformData::PostDelayedTask(
     std::unique_ptr<Task> task, double delay_in_seconds) {
+  fprintf(stderr, "PIPD::PostDelayedTask %p %p [%p] %.f\n", this, flush_tasks_, task.get(), delay_in_seconds);
   CHECK_NE(flush_tasks_, nullptr);
   std::unique_ptr<DelayedTask> delayed(new DelayedTask());
   delayed->task = std::move(task);
@@ -99,10 +102,12 @@ void PerIsolatePlatformData::PostDelayedTask(
 }
 
 PerIsolatePlatformData::~PerIsolatePlatformData() {
+  fprintf(stderr, "PIPD::~PIPD %p\n", this);
   Shutdown();
 }
 
 void PerIsolatePlatformData::Shutdown() {
+  fprintf(stderr, "PIPD::Shutdown %p %p\n", this, flush_tasks_);
   if (flush_tasks_ == nullptr)
     return;
 
@@ -111,6 +116,7 @@ void PerIsolatePlatformData::Shutdown() {
 
   uv_close(reinterpret_cast<uv_handle_t*>(flush_tasks_),
            [](uv_handle_t* handle) {
+    fprintf(stderr, "PIPD Done closing %p\n", handle);
     delete reinterpret_cast<uv_async_t*>(handle);
   });
   flush_tasks_ = nullptr;
@@ -140,6 +146,7 @@ void NodePlatform::RegisterIsolate(IsolateData* isolate_data, uv_loop_t* loop) {
   Isolate* isolate = isolate_data->isolate();
   Mutex::ScopedLock lock(per_isolate_mutex_);
   std::shared_ptr<PerIsolatePlatformData> existing = per_isolate_[isolate];
+  fprintf(stderr, "RegisterIsolate(%p, %p), existing = %p\n", isolate, loop, existing.get());
   if (existing) {
     existing->ref();
   } else {
@@ -152,6 +159,7 @@ void NodePlatform::UnregisterIsolate(IsolateData* isolate_data) {
   Isolate* isolate = isolate_data->isolate();
   Mutex::ScopedLock lock(per_isolate_mutex_);
   std::shared_ptr<PerIsolatePlatformData> existing = per_isolate_[isolate];
+  fprintf(stderr, "UnregisterIsolate(%p), existing = %p\n", isolate, existing.get());
   CHECK(existing);
   if (existing->unref() == 0) {
     existing->Shutdown();
