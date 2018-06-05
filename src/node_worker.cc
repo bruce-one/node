@@ -239,10 +239,14 @@ void Worker::Run() {
     env_.reset();
   }
 
+  Isolate* info_ptr = isolate_;
+  fprintf(stderr, "E DisposeIsolate(%p,%p) from within thread\n", info_ptr, &loop_);
   DisposeIsolate();
+  fprintf(stderr, "X DisposeIsolate(%p,%p) from within thread\n", info_ptr, &loop_);
 
   // Need to run the loop one more time to close the platform's uv_async_t
   uv_run(&loop_, UV_RUN_ONCE);
+  fprintf(stderr, "ran loop in order to clean up for %p %p\n", info_ptr, &loop_);
 
   {
     Mutex::ScopedLock lock(mutex_);
@@ -362,7 +366,10 @@ Worker::~Worker() {
 
   // This has most likely already happened within the worker thread -- this
   // is just in case Worker creation failed early.
+  Isolate* info_ptr = isolate_;
+  fprintf(stderr, "E DisposeIsolate(%p,%p) from outside thread\n", info_ptr, &loop_);
   DisposeIsolate();
+  fprintf(stderr, "X DisposeIsolate(%p,%p) from outside thread\n", info_ptr, &loop_);
 }
 
 void Worker::New(const FunctionCallbackInfo<Value>& args) {
