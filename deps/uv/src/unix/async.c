@@ -69,6 +69,7 @@ int uv_async_send(uv_async_t* handle) {
 
 
 void uv__async_close(uv_async_t* handle) {
+  fprintf(stderr, "uv__async_close(%p)\n", handle);
   QUEUE_REMOVE(&handle->queue);
   uv__handle_stop(handle);
 }

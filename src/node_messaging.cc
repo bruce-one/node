@@ -450,6 +450,7 @@ void MessagePort::OnMessage() {
 
       if (stop_event_loop_) {
         CHECK(!data_->receiving_messages_);
+        fprintf(stderr, "Stopping event loop %p %p\n", env()->isolate(), env()->event_loop());
         uv_stop(env()->event_loop());
         break;
       }

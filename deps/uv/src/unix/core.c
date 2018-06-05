@@ -252,10 +252,12 @@ static void uv__finish_close(uv_handle_t* handle) {
   handle->flags |= UV_CLOSED;
 
   switch (handle->type) {
+    case UV_ASYNC:
+      fprintf(stderr, "UV_ASYNC closing %p\n", handle);
+      break;
     case UV_PREPARE:
     case UV_CHECK:
     case UV_IDLE:
-    case UV_ASYNC:
     case UV_TIMER:
     case UV_PROCESS:
     case UV_FS_EVENT:
@@ -354,6 +356,7 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
   if (!r)
     uv__update_time(loop);
 
+  fprintf(stderr, "before uv_run(%p, %d): stop_flag = %d, r = %d\n", loop, (int)mode, loop->stop_flag, r);
   while (r != 0 && loop->stop_flag == 0) {
     uv__update_time(loop);
     uv__run_timers(loop);
@@ -392,6 +395,7 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
    */
   if (loop->stop_flag != 0)
     loop->stop_flag = 0;
+  fprintf(stderr, "after uv_run(%p, %d): stop_flag = %d, r = %d\n", loop, (int)mode, loop->stop_flag, r);
 
   return r;
 }
