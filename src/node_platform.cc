@@ -148,6 +148,7 @@ void NodePlatform::RegisterIsolate(IsolateData* isolate_data, uv_loop_t* loop) {
   std::shared_ptr<PerIsolatePlatformData> existing = per_isolate_[isolate];
   fprintf(stderr, "RegisterIsolate(%p, %p), existing = %p\n", isolate, loop, existing.get());
   if (existing) {
+    CHECK_EQ(loop, existing->event_loop());
     existing->ref();
   } else {
     per_isolate_[isolate] =
