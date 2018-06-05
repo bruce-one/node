@@ -218,6 +218,8 @@ void uv__make_close_pending(uv_handle_t* handle) {
   assert(!(handle->flags & UV_CLOSED));
   handle->next_closing = handle->loop->closing_handles;
   handle->loop->closing_handles = handle;
+  if (handle->type == UV_ASYNC)
+    fprintf(stderr, "Making UV_ASYNC close pending %p %p\n", handle->loop, handle);
 }
 
 int uv__getiovmax(void) {
@@ -356,7 +358,7 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
   if (!r)
     uv__update_time(loop);
 
-  fprintf(stderr, "before uv_run(%p, %d): stop_flag = %d, r = %d\n", loop, (int)mode, loop->stop_flag, r);
+  fprintf(stderr, "before uv_run(%p, %d): stop_flag = %d, r = %d, close_pending = %p\n", loop, (int)mode, loop->stop_flag, r, loop->closing_handles);
   while (r != 0 && loop->stop_flag == 0) {
     uv__update_time(loop);
     uv__run_timers(loop);
