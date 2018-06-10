@@ -739,4 +739,19 @@ bool Environment::is_stopping_worker() const {
   return worker_context_->is_stopped();
 }
 
+
+// Not really any better place than env.cc at this moment.
+void BaseObject::DeleteMe(void* data) {
+  BaseObject* self = static_cast<BaseObject*>(data);
+  delete self;
+}
+
+Local<Object> BaseObject::WrappedObject() const {
+  return object();
+}
+
+bool BaseObject::IsRootNode() const {
+  return !persistent_handle_.IsWeak();
+}
+
 }  // namespace node

@@ -805,7 +805,7 @@ bool Environment::CleanupHookCallback::Equal::operator()(
 
 BaseObject* Environment::CleanupHookCallback::GetBaseObject() const {
   if (fn_ == BaseObject::DeleteMe)
-    return static_cast<BaseObject*>(data_);
+    return static_cast<BaseObject*>(arg_);
   else
     return nullptr;
 }
