@@ -983,6 +983,8 @@ class Environment {
       inline bool operator()(const CleanupHookCallback& a,
                              const CleanupHookCallback& b) const;
     };
+
+    inline BaseObject* GetBaseObject() const;
   };
 
   // Use an unordered_set, so that we have efficient insertion and removal.
@@ -994,6 +996,9 @@ class Environment {
   static void EnvPromiseHook(v8::PromiseHookType type,
                              v8::Local<v8::Promise> promise,
                              v8::Local<v8::Value> parent);
+
+  template <typename T>
+  void ForEachBaseObject(T&& iterator);
 
 #define V(PropertyName, TypeName) Persistent<TypeName> PropertyName ## _;
   ENVIRONMENT_STRONG_PERSISTENT_PROPERTIES(V)
