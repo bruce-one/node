@@ -35,6 +35,8 @@ class Worker : public AsyncWrap {
   static void Ref(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Unref(const v8::FunctionCallbackInfo<v8::Value>& args);
 
+  static uint64_t ThreadIdForIsolate(v8::Isolate* isolate);
+
  private:
   void OnThreadStopped();
   void DisposeIsolate();
@@ -46,6 +48,9 @@ class Worker : public AsyncWrap {
   DeleteFnPtr<ArrayBufferAllocator, FreeArrayBufferAllocator>
       array_buffer_allocator_;
   uv_thread_t tid_;
+
+  static std::unordered_map<v8::Isolate*, uint64_t> thread_ids;
+  static Mutex thread_ids_mutex;
 
   // This mutex protects access to all variables listed below it.
   mutable Mutex mutex_;

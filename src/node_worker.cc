@@ -71,6 +71,11 @@ Worker::Worker(Environment* env, Local<Object> wrap)
   CHECK_NE(isolate_, nullptr);
   CHECK_EQ(uv_loop_init(&loop_), 0);
 
+  {
+    Mutex::ScopedLock lock(thread_ids_mutex);
+    thread_ids[isolate_] = thread_id_;
+  }
+
   thread_exit_async_.reset(new uv_async_t);
   thread_exit_async_->data = this;
   CHECK_EQ(uv_async_init(env->event_loop(),
@@ -265,6 +270,12 @@ void Worker::DisposeIsolate() {
   isolate_data_.reset();
 
   isolate_->Dispose();
+
+  {
+    Mutex::ScopedLock lock(thread_ids_mutex);
+    thread_ids.erase(isolate_);
+  }
+
   isolate_ = nullptr;
 }
 
@@ -406,6 +417,17 @@ void Worker::Exit(int code) {
 size_t Worker::self_size() const {
   return sizeof(*this);
 }
+
+uint64_t Worker::ThreadIdForIsolate(Isolate* isolate) {
+  Mutex::ScopedLock lock(thread_ids_mutex);
+  auto it = thread_ids.find(isolate);
+  if (it == thread_ids.end())
+    return 0;
+  return it->second;
+}
+
+std::unordered_map<Isolate*, uint64_t> Worker::thread_ids;
+Mutex Worker::thread_ids_mutex;
 
 namespace {
 

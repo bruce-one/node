@@ -57,6 +57,7 @@
 #include "http_parser.h"
 #include "nghttp2/nghttp2ver.h"
 #include "req_wrap-inl.h"
+#include "sharedarraybuffer_metadata.h"
 #include "string_bytes.h"
 #include "tracing/agent.h"
 #include "util.h"
@@ -3621,6 +3622,9 @@ Isolate* NewIsolate(ArrayBufferAllocator* allocator) {
   isolate->SetMicrotasksPolicy(v8::MicrotasksPolicy::kExplicit);
   isolate->SetFatalErrorHandler(OnFatalError);
   isolate->SetAllowWasmCodeGenerationCallback(AllowWasmCodeGenerationCallback);
+  isolate->SetAtomicsWaitCallback(
+      worker::SharedArrayBufferMetadata::AtomicsWaitCallback,
+      static_cast<void*>(isolate));
 
   return isolate;
 }

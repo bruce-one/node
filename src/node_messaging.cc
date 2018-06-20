@@ -37,6 +37,11 @@ namespace worker {
 Message::Message(MallocedBuffer<char>&& buffer)
     : main_message_buf_(std::move(buffer)) {}
 
+Message::~Message() {
+  for (SharedArrayBufferMetadataReference& ref : shared_array_buffers_)
+    ref->DecreaseInTransferCount();
+}
+
 namespace {
 
 // This is used to tell V8 how to read transferred host objects, like other
@@ -102,11 +107,17 @@ MaybeLocal<Value> Message::Deserialize(Environment* env,
   for (uint32_t i = 0; i < shared_array_buffers_.size(); ++i) {
     Local<SharedArrayBuffer> sab;
     if (!shared_array_buffers_[i]->GetSharedArrayBuffer(env, context)
-            .ToLocal(&sab))
+            .ToLocal(&sab)) {
+      for (; i < shared_array_buffers_.size(); ++i)
+        shared_array_buffers_[i]->DecreaseInTransferCount();
+      shared_array_buffers_.clear();
       return MaybeLocal<Value>();
+    }
+    shared_array_buffers_[i]->DecreaseInTransferCount();
     shared_array_buffers.push_back(sab);
   }
   shared_array_buffers_.clear();
+
 
   DeserializerDelegate delegate(this, env, ports, shared_array_buffers);
   ValueDeserializer deserializer(
@@ -136,6 +147,7 @@ MaybeLocal<Value> Message::Deserialize(Environment* env,
 void Message::AddSharedArrayBuffer(
     SharedArrayBufferMetadataReference reference) {
   shared_array_buffers_.push_back(reference);
+  reference->IncreaseInTransferCount();
 }
 
 void Message::AddMessagePort(std::unique_ptr<MessagePortData>&& data) {

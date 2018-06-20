@@ -18,6 +18,7 @@ class MessagePort;
 class Message {
  public:
   explicit Message(MallocedBuffer<char>&& payload = MallocedBuffer<char>());
+  ~Message();
 
   Message(Message&& other) = default;
   Message& operator=(Message&& other) = default;
