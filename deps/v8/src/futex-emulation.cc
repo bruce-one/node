@@ -190,7 +190,7 @@ Object* FutexEmulation::Wait(Isolate* isolate,
         continue;
       }
 
-      if (stop_handle.has_stopped()) {
+      if (stop_handle.has_stopped() && node->waiting_) {
         node->waiting_ = false;
         callback_result = AtomicsWaitEvent::kAPIStopped;
       }
