@@ -7,13 +7,49 @@
 
 namespace node {
 
+class MemoryRetainerNode : public v8::EmbedderGraph::Node {
+ public:
+  explicit inline MemoryRetainerNode(MemoryTracker* tracker,
+                                     const MemoryRetainer* retainer,
+                                     const char* name)
+     : retainer_(retainer) {
+    if (retainer_ != nullptr) {
+      v8::HandleScope handle_scope(tracker->isolate());
+      v8::Local<v8::Object> obj = retainer_->WrappedObject();
+      if (!obj.IsEmpty())
+        wrapper_node_ = tracker->graph()->V8Node(obj);
+
+      name_ = retainer_->MemoryInfoName();
+    }
+    if (name_.empty() && name != nullptr) {
+      name_ = name;
+    }
+  }
+
+  const char* Name() override { return name_.c_str(); }
+  size_t SizeInBytes() override { return size_; }
+  Node* WrapperNode() override { return wrapper_node_; }
+
+  bool IsRootNode() override {
+    return retainer_ != nullptr && retainer_->IsRootNode();
+  }
+
+ private:
+  friend class MemoryTracker;
+
+  Node* wrapper_node_ = nullptr;
+  const MemoryRetainer* retainer_;
+  std::string name_;
+  size_t size_ = 0;
+};
+
 template <typename T>
 void MemoryTracker::TrackThis(const T* obj) {
-  accumulated_size_ += sizeof(T);
+  CurrentNode()->size_ = sizeof(T);
 }
 
 void MemoryTracker::TrackFieldWithSize(const char* name, size_t size) {
-  accumulated_size_ += size;
+  AddNode(name)->size_ = size;
 }
 
 void MemoryTracker::TrackField(const char* name, const MemoryRetainer& value) {
@@ -21,9 +57,13 @@ void MemoryTracker::TrackField(const char* name, const MemoryRetainer& value) {
 }
 
 void MemoryTracker::TrackField(const char* name, const MemoryRetainer* value) {
-  if (track_only_self_ || value == nullptr || seen_.count(value) > 0) return;
-  seen_.insert(value);
-  Track(value);
+  if (track_only_self_ || value == nullptr) return;
+  auto it = seen_.find(value);
+  if (it != seen_.end()) {
+    graph_->AddEdge(CurrentNode(), it->second);
+  } else {
+    Track(value, name);
+  }
 }
 
 template <typename T>
@@ -35,8 +75,10 @@ void MemoryTracker::TrackField(const char* name,
 template <typename T, typename Iterator>
 void MemoryTracker::TrackField(const char* name, const T& value) {
   size_t index = 0;
+  PushNode(name);
   for (Iterator it = value.begin(); it != value.end(); ++it)
     TrackField(std::to_string(index++).c_str(), *it);
+  PopNode();
 }
 
 template <typename T>
@@ -60,8 +102,10 @@ void MemoryTracker::TrackField(const char* name, const T& value) {
 
 template <typename T, typename U>
 void MemoryTracker::TrackField(const char* name, const std::pair<T, U>& value) {
+  PushNode(name);
   TrackField("first", value.first);
   TrackField("second", value.second);
+  PopNode();
 }
 
 template <typename T>
@@ -73,10 +117,13 @@ void MemoryTracker::TrackField(const char* name,
 template <typename T, typename Traits>
 void MemoryTracker::TrackField(const char* name,
                                const v8::Persistent<T, Traits>& value) {
+  TrackField(name, value.Get(isolate_));
 }
 
 template <typename T>
 void MemoryTracker::TrackField(const char* name, const v8::Local<T>& value) {
+  if (!value.IsEmpty())
+    graph_->AddEdge(CurrentNode(), graph_->V8Node(value));
 }
 
 template <typename T>
@@ -95,9 +142,47 @@ void MemoryTracker::TrackField(const char* name,
   TrackField(name, value.GetJSArray());
 }
 
-void MemoryTracker::Track(const MemoryRetainer* value) {
+void MemoryTracker::Track(const MemoryRetainer* value, const char* name) {
   v8::HandleScope handle_scope(isolate_);
+  MemoryRetainerNode* n = PushNode(name, value);
   value->MemoryInfo(this);
+  CHECK_EQ(CurrentNode(), n);
+  CHECK_NE(n->size_, 0);
+  PopNode();
+}
+
+MemoryRetainerNode* MemoryTracker::CurrentNode() const {
+  if (node_stack_.empty()) return nullptr;
+  return node_stack_.top();
+}
+
+MemoryRetainerNode* MemoryTracker::AddNode(
+    const char* name, const MemoryRetainer* retainer) {
+  MemoryRetainerNode* n = new MemoryRetainerNode(this, retainer, name);
+  graph_->AddNode(std::unique_ptr<v8::EmbedderGraph::Node>(n));
+  if (retainer != nullptr)
+    seen_[retainer] = n;
+
+  if (CurrentNode() != nullptr)
+    graph_->AddEdge(CurrentNode(), n);
+
+  if (n->WrapperNode() != nullptr) {
+    graph_->AddEdge(n, n->WrapperNode());
+    graph_->AddEdge(n->WrapperNode(), n);
+  }
+
+  return n;
+}
+
+MemoryRetainerNode* MemoryTracker::PushNode(
+    const char* name, const MemoryRetainer* retainer) {
+  MemoryRetainerNode* n = AddNode(name, retainer);
+  node_stack_.push(n);
+  return n;
+}
+
+void MemoryTracker::PopNode() {
+  node_stack_.pop();
 }
 
 }  // namespace node
