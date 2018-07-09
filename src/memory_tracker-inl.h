@@ -28,7 +28,8 @@ class MemoryRetainerNode : public v8::EmbedderGraph::Node {
 
   const char* Name() override { return name_.c_str(); }
   size_t SizeInBytes() override { return size_; }
-  Node* WrapperNode() override { return wrapper_node_; }
+  // Node* WrapperNode() override { return wrapper_node_; }
+  Node* V8WrapperNode() { return wrapper_node_; }
 
   bool IsRootNode() override {
     return retainer_ != nullptr && retainer_->IsRootNode();
@@ -166,9 +167,9 @@ MemoryRetainerNode* MemoryTracker::AddNode(
   if (CurrentNode() != nullptr)
     graph_->AddEdge(CurrentNode(), n);
 
-  if (n->WrapperNode() != nullptr) {
-    graph_->AddEdge(n, n->WrapperNode());
-    graph_->AddEdge(n->WrapperNode(), n);
+  if (n->V8WrapperNode() != nullptr) {
+    graph_->AddEdge(n, n->V8WrapperNode());
+    graph_->AddEdge(n->V8WrapperNode(), n);
   }
 
   return n;
