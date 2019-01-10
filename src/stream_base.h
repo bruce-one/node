@@ -271,6 +271,7 @@ class StreamBase : public StreamResource {
   // This is named `stream_env` to avoid name clashes, because a lot of
   // subclasses are also `BaseObject`s.
   Environment* stream_env() const;
+  uv_buf_t stream_buf() const;
 
   // Shut down the current stream. This request can use an existing
   // ShutdownWrap object (that was created in JS), or a new one will be created.
@@ -301,6 +302,7 @@ class StreamBase : public StreamResource {
 
  protected:
   explicit StreamBase(Environment* env);
+  explicit StreamBase(Environment* env, uv_buf_t buf);
 
   // JS Methods
   int ReadStartJS(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -339,6 +341,7 @@ class StreamBase : public StreamResource {
 
  private:
   Environment* env_;
+  uv_buf_t buf_;
   EmitToJSStreamListener default_listener_;
 
   void SetWriteResult(const StreamWriteResult& res);

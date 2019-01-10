@@ -150,11 +150,23 @@ inline void StreamResource::EmitWantsWrite(size_t suggested_size) {
 }
 
 inline StreamBase::StreamBase(Environment* env) : env_(env) {
+  buf_.base = nullptr;
+  buf_.len = 0;
+  PushStreamListener(&default_listener_);
+}
+
+inline StreamBase::StreamBase(Environment* env, uv_buf_t buf)
+    : env_(env),
+      buf_(buf) {
   PushStreamListener(&default_listener_);
 }
 
 inline Environment* StreamBase::stream_env() const {
   return env_;
+}
+
+inline uv_buf_t StreamBase::stream_buf() const {
+  return buf_;
 }
 
 inline int StreamBase::Shutdown(v8::Local<v8::Object> req_wrap_obj) {

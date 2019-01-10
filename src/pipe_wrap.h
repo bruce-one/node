@@ -55,6 +55,11 @@ class PipeWrap : public ConnectionWrap<PipeWrap, uv_pipe_t> {
            v8::Local<v8::Object> object,
            ProviderType provider,
            bool ipc);
+  PipeWrap(Environment* env,
+           v8::Local<v8::Object> object,
+           ProviderType provider,
+           bool ipc,
+           uv_buf_t buf);
 
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Bind(const v8::FunctionCallbackInfo<v8::Value>& args);

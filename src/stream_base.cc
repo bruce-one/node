@@ -295,7 +295,7 @@ void StreamBase::CallJSOnreadMethod(ssize_t nread,
   DCHECK_EQ(static_cast<int32_t>(nread), nread);
   DCHECK_LE(offset, INT32_MAX);
 
-  if (ab.IsEmpty()) {
+  if (ab.IsEmpty() && buf_.base == nullptr) {
     DCHECK_EQ(offset, 0);
     DCHECK_LE(nread, 0);
   } else {
@@ -347,7 +347,12 @@ void StreamResource::ClearError() {
 
 
 uv_buf_t StreamListener::OnStreamAlloc(size_t suggested_size) {
-  return uv_buf_init(Malloc(suggested_size), suggested_size);
+  StreamBase* stream = static_cast<StreamBase*>(stream_);
+  const uv_buf_t stream_buf = stream->stream_buf();
+  if (stream_buf.base != nullptr)
+    return stream_buf;
+  else
+    return uv_buf_init(Malloc(suggested_size), suggested_size);
 }
 
 
@@ -357,22 +362,28 @@ void EmitToJSStreamListener::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
   Environment* env = stream->stream_env();
   HandleScope handle_scope(env->isolate());
   Context::Scope context_scope(env->context());
+  const uv_buf_t stream_buf = stream->stream_buf();
+  Local<ArrayBuffer> obj;
 
   if (nread <= 0)  {
-    free(buf.base);
-    if (nread < 0)
-      stream->CallJSOnreadMethod(nread, Local<ArrayBuffer>());
-    return;
+    if (stream_buf.base == nullptr)
+      free(buf.base);
+    if (nread == 0)
+      return;
+  } else if (stream_buf.base != nullptr) {
+    CHECK_LE(static_cast<size_t>(nread), stream_buf.len);
+  } else {
+    CHECK_LE(static_cast<size_t>(nread), buf.len);
+
+    char* base = Realloc(buf.base, nread);
+
+    obj = ArrayBuffer::New(
+        env->isolate(),
+        base,
+        nread,
+        // Transfer ownership to V8.
+        v8::ArrayBufferCreationMode::kInternalized);
   }
-
-  CHECK_LE(static_cast<size_t>(nread), buf.len);
-  char* base = Realloc(buf.base, nread);
-
-  Local<ArrayBuffer> obj = ArrayBuffer::New(
-      env->isolate(),
-      base,
-      nread,
-      v8::ArrayBufferCreationMode::kInternalized);  // Transfer ownership to V8.
   stream->CallJSOnreadMethod(nread, obj);
 }
 
