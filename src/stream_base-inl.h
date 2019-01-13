@@ -150,23 +150,11 @@ inline void StreamResource::EmitWantsWrite(size_t suggested_size) {
 }
 
 inline StreamBase::StreamBase(Environment* env) : env_(env) {
-  buf_.base = nullptr;
-  buf_.len = 0;
-  PushStreamListener(&default_listener_);
-}
-
-inline StreamBase::StreamBase(Environment* env, uv_buf_t buf)
-    : env_(env),
-      buf_(buf) {
   PushStreamListener(&default_listener_);
 }
 
 inline Environment* StreamBase::stream_env() const {
   return env_;
-}
-
-inline uv_buf_t StreamBase::stream_buf() const {
-  return buf_;
 }
 
 inline int StreamBase::Shutdown(v8::Local<v8::Object> req_wrap_obj) {
@@ -338,6 +326,9 @@ void StreamBase::AddMethods(Environment* env, Local<FunctionTemplate> t) {
   env->SetProtoMethod(t, "readStart", JSMethod<Base, &StreamBase::ReadStartJS>);
   env->SetProtoMethod(t, "readStop", JSMethod<Base, &StreamBase::ReadStopJS>);
   env->SetProtoMethod(t, "shutdown", JSMethod<Base, &StreamBase::Shutdown>);
+  env->SetProtoMethod(t,
+                      "useUserBuffer",
+                      JSMethod<Base, &StreamBase::UseUserBuffer>);
   env->SetProtoMethod(t, "writev", JSMethod<Base, &StreamBase::Writev>);
   env->SetProtoMethod(t,
                       "writeBuffer",

@@ -106,19 +106,6 @@ LibuvStreamWrap::LibuvStreamWrap(Environment* env,
       stream_(stream) {
 }
 
-LibuvStreamWrap::LibuvStreamWrap(Environment* env,
-                                 Local<Object> object,
-                                 uv_stream_t* stream,
-                                 AsyncWrap::ProviderType provider,
-                                 uv_buf_t buf)
-    : HandleWrap(env,
-                 object,
-                 reinterpret_cast<uv_handle_t*>(stream),
-                 provider),
-      StreamBase(env, buf),
-      stream_(stream) {
-}
-
 
 Local<FunctionTemplate> LibuvStreamWrap::GetConstructorTemplate(
     Environment* env) {

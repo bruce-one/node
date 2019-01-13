@@ -84,11 +84,6 @@ class LibuvStreamWrap : public HandleWrap, public StreamBase {
                   v8::Local<v8::Object> object,
                   uv_stream_t* stream,
                   AsyncWrap::ProviderType provider);
-  LibuvStreamWrap(Environment* env,
-                  v8::Local<v8::Object> object,
-                  uv_stream_t* stream,
-                  AsyncWrap::ProviderType provider,
-                  uv_buf_t buf);
 
   AsyncWrap* GetAsyncWrap() override;
 

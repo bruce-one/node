@@ -185,6 +185,21 @@ class EmitToJSStreamListener : public ReportWritesToJSStreamListener {
 };
 
 
+// An alternative listener that uses a custom, user-provided buffer
+// for reading data.
+class CustomBufferJSListener : public ReportWritesToJSStreamListener {
+ public:
+  uv_buf_t OnStreamAlloc(size_t suggested_size) override;
+  void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
+  void OnStreamDestroy() override { delete this; }
+
+  explicit CustomBufferJSListener(uv_buf_t buffer) : buffer_(buffer) {}
+
+ private:
+  uv_buf_t buffer_;
+};
+
+
 // A generic stream, comparable to JS land’s `Duplex` streams.
 // A stream is always controlled through one `StreamListener` instance.
 class StreamResource {
@@ -271,7 +286,6 @@ class StreamBase : public StreamResource {
   // This is named `stream_env` to avoid name clashes, because a lot of
   // subclasses are also `BaseObject`s.
   Environment* stream_env() const;
-  uv_buf_t stream_buf() const;
 
   // Shut down the current stream. This request can use an existing
   // ShutdownWrap object (that was created in JS), or a new one will be created.
@@ -302,7 +316,6 @@ class StreamBase : public StreamResource {
 
  protected:
   explicit StreamBase(Environment* env);
-  explicit StreamBase(Environment* env, uv_buf_t buf);
 
   // JS Methods
   int ReadStartJS(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -312,6 +325,7 @@ class StreamBase : public StreamResource {
   int WriteBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
   template <enum encoding enc>
   int WriteString(const v8::FunctionCallbackInfo<v8::Value>& args);
+  int UseUserBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   template <class Base>
   static void GetFD(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -341,7 +355,6 @@ class StreamBase : public StreamResource {
 
  private:
   Environment* env_;
-  uv_buf_t buf_;
   EmitToJSStreamListener default_listener_;
 
   void SetWriteResult(const StreamWriteResult& res);

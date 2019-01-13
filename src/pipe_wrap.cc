@@ -149,14 +149,7 @@ void PipeWrap::New(const FunctionCallbackInfo<Value>& args) {
       UNREACHABLE();
   }
 
-  if (args.Length() > 1 && Buffer::HasInstance(args[1])) {
-    uv_buf_t buf;
-    buf.base = Buffer::Data(args[1]);
-    buf.len = Buffer::Length(args[1]);
-    new PipeWrap(env, args.This(), provider, ipc, buf);
-  } else {
-    new PipeWrap(env, args.This(), provider, ipc);
-  }
+  new PipeWrap(env, args.This(), provider, ipc);
 }
 
 
@@ -165,17 +158,6 @@ PipeWrap::PipeWrap(Environment* env,
                    ProviderType provider,
                    bool ipc)
     : ConnectionWrap(env, object, provider) {
-  int r = uv_pipe_init(env->event_loop(), &handle_, ipc);
-  CHECK_EQ(r, 0);  // How do we proxy this error up to javascript?
-                   // Suggestion: uv_pipe_init() returns void.
-}
-
-PipeWrap::PipeWrap(Environment* env,
-                   Local<Object> object,
-                   ProviderType provider,
-                   bool ipc,
-                   uv_buf_t buf)
-    : ConnectionWrap(env, object, provider, buf) {
   int r = uv_pipe_init(env->event_loop(), &handle_, ipc);
   CHECK_EQ(r, 0);  // How do we proxy this error up to javascript?
                    // Suggestion: uv_pipe_init() returns void.

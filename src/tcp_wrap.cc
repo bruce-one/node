@@ -158,27 +158,12 @@ void TCPWrap::New(const FunctionCallbackInfo<Value>& args) {
       UNREACHABLE();
   }
 
-  if (args.Length() > 1 && Buffer::HasInstance(args[1])) {
-    uv_buf_t buf;
-    buf.base = Buffer::Data(args[1]);
-    buf.len = Buffer::Length(args[1]);
-    new TCPWrap(env, args.This(), provider, buf);
-  } else {
-    new TCPWrap(env, args.This(), provider);
-  }
+  new TCPWrap(env, args.This(), provider);
 }
 
 
 TCPWrap::TCPWrap(Environment* env, Local<Object> object, ProviderType provider)
     : ConnectionWrap(env, object, provider) {
-  int r = uv_tcp_init(env->event_loop(), &handle_);
-  CHECK_EQ(r, 0);  // How do we proxy this error up to javascript?
-                   // Suggestion: uv_tcp_init() returns void.
-}
-
-TCPWrap::TCPWrap(Environment* env, Local<Object> object, ProviderType provider,
-                 uv_buf_t buf)
-    : ConnectionWrap(env, object, provider, buf) {
   int r = uv_tcp_init(env->event_loop(), &handle_);
   CHECK_EQ(r, 0);  // How do we proxy this error up to javascript?
                    // Suggestion: uv_tcp_init() returns void.
