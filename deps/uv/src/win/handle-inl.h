@@ -79,6 +79,7 @@
     uv__active_handle_rm((uv_handle_t*) (handle));                      \
                                                                         \
     (handle)->flags |= UV_HANDLE_CLOSED;                                \
+    (h)->u.reserved[3] = 0;                                             \
                                                                         \
     if ((handle)->close_cb)                                             \
       (handle)->close_cb((uv_handle_t*) (handle));                      \

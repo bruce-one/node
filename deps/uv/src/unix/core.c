@@ -284,6 +284,7 @@ static void uv__finish_close(uv_handle_t* handle) {
 
   uv__handle_unref(handle);
   QUEUE_REMOVE(&handle->handle_queue);
+  handle->u.reserved[3] = 0;
 
   if (handle->close_cb) {
     handle->close_cb(handle);

@@ -269,11 +269,15 @@ void uv__timer_close(uv_timer_t* handle);
 # define uv__handle_platform_init(h) ((h)->next_closing = NULL)
 #endif
 
+extern unsigned int uv__handle_initialized_mark;
+
 #define uv__handle_init(loop_, h, type_)                                      \
   do {                                                                        \
     (h)->loop = (loop_);                                                      \
     (h)->type = (type_);                                                      \
     (h)->flags = UV_HANDLE_REF;  /* Ref the loop when active. */              \
+    assert((h)->u.reserved[3] != &uv__handle_initialized_mark);               \
+    (h)->u.reserved[3] = &uv__handle_initialized_mark;                        \
     QUEUE_INSERT_TAIL(&(loop_)->handle_queue, &(h)->handle_queue);            \
     uv__handle_platform_init(h);                                              \
   }                                                                           \

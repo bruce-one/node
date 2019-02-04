@@ -37,6 +37,9 @@
 #endif
 
 
+unsigned int uv__handle_initialized_mark = 0xdeadbeef;
+
+
 typedef struct {
   uv_malloc_func local_malloc;
   uv_realloc_func local_realloc;
