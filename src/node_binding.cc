@@ -296,6 +296,7 @@ DLib::DLib(const char* filename, int flags)
 #ifdef __POSIX__
 bool DLib::Open() {
   handle_ = dlopen(filename_.c_str(), flags_);
+  fprintf(stderr, "dlopen(%s, %d) = %p\n", filename_.c_str(), flags_, handle_);
   if (handle_ != nullptr) return true;
   errmsg_ = dlerror();
   return false;
@@ -304,6 +305,7 @@ bool DLib::Open() {
 void DLib::Close() {
   if (handle_ == nullptr) return;
   int err = dlclose(handle_);
+  fprintf(stderr, "dlclose(%p) = %d\n", handle_, err);
 
   if (err == 0) {
     // musl libc implements dlclose() as a no-op which returns 1.
