@@ -8,7 +8,7 @@ const bench = common.createBenchmark(main, {
     'BrotliCompress', 'BrotliDecompress',
   ],
   options: ['true', 'false'],
-  n: [5e5]
+  n: [5e4]
 });
 
 function main({ n, type, options }) {
@@ -21,12 +21,12 @@ function main({ n, type, options }) {
     const opts = {};
     bench.start();
     for (; i < n; ++i)
-      fn(opts);
+      fn(opts).destroy();
     bench.end(n);
   } else {
     bench.start();
     for (; i < n; ++i)
-      fn();
+      fn().destroy();
     bench.end(n);
   }
 }

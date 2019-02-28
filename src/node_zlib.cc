@@ -38,6 +38,9 @@
 #include <sys/types.h>
 #include <atomic>
 
+#include <sys/mman.h>
+#include <unistd.h>
+
 namespace node {
 
 using v8::Array;
@@ -55,6 +58,269 @@ using v8::String;
 using v8::Uint32;
 using v8::Uint32Array;
 using v8::Value;
+
+const size_t pagesize = sysconf(_SC_PAGESIZE);
+
+class MaybePageAllocator;
+
+class PageAllocator {
+ public:
+  struct MappedRange;
+
+  explicit PageAllocator(v8::Platform* platform);
+  MappedRange Allocate(size_t size);
+  void Free(MappedRange&& range);
+
+  struct MappedRange {
+    void* base = nullptr;
+    size_t len = 0;
+
+    // Return a sub-range of size `size` and shrink this range.
+    MappedRange SliceOff(size_t size);
+
+    MappedRange() {}
+    MappedRange(void* base, size_t len) : base(base), len(len) {
+      DCHECK_EQ(reinterpret_cast<uintptr_t>(len) % pagesize, 0);
+      DCHECK_EQ(len % pagesize, 0);
+    }
+    ~MappedRange();
+    MappedRange(MappedRange&& other);
+    MappedRange& operator=(MappedRange&& other);
+    MappedRange& operator=(const MappedRange&) = delete;
+    MappedRange(const MappedRange&) = delete;
+
+   private:
+    static constexpr size_t kDontFreeTag = 1;
+
+    struct IsSmallerThan {
+      inline bool operator()(const MappedRange& a, const MappedRange& b) const {
+        size_t al = a.len & ~kDontFreeTag;
+        size_t bl = b.len & ~kDontFreeTag;
+        if (al < bl) return true;
+        if (al > bl) return false;
+        return a.base < b.base;
+      }
+    };
+
+    friend class PageAllocator;
+  };
+
+ private:
+  class ReleasePagesTask : public v8::Task {
+   public:
+    void Run() override;
+  };
+
+  v8::Platform* platform_;
+
+  struct Freelist {
+    typedef std::set<MappedRange, MappedRange::IsSmallerThan> RangeSet;
+    Mutex mutex;
+    RangeSet ranges;
+    size_t total = 0;
+    std::atomic_flag release_scheduled {false};
+    std::atomic_flag delayed_release_scheduled {false};
+
+    inline MappedRange extract(RangeSet::iterator it);
+    inline void add_range(MappedRange&& range);
+    bool is_consistent() const;
+
+    static constexpr size_t kMB = 1024 * 1024;
+    static constexpr size_t kTargetSize = 2 * kMB;
+    static constexpr size_t kReleaseThreshold = 4 * kMB;
+  };
+
+  static Freelist freelist;
+};
+
+class MaybePageAllocator {
+ public:
+  explicit MaybePageAllocator(v8::Platform* platform);
+  ~MaybePageAllocator();
+
+  char* Allocate(size_t size);
+  void Free(char* pointer);
+
+  MaybePageAllocator& operator=(MaybePageAllocator&&) = default;
+  MaybePageAllocator(MaybePageAllocator&&) = default;
+  MaybePageAllocator& operator=(const MaybePageAllocator&) = delete;
+  MaybePageAllocator(const MaybePageAllocator&) = delete;
+
+ private:
+  PageAllocator paging_allocator_;
+  std::vector<PageAllocator::MappedRange> allocations_;
+};
+
+
+PageAllocator::Freelist PageAllocator::freelist;
+
+PageAllocator::MappedRange PageAllocator::Freelist::extract(
+    PageAllocator::Freelist::RangeSet::iterator it) {
+  // std::set doesn't deal well with movable types -- until C++17 there's no
+  // official way to move values out of the set.
+  // We manually pass ownership to a new object in that case.
+  MappedRange ret { it->base, it->len };
+  const_cast<MappedRange&>(*it).len |= MappedRange::kDontFreeTag;
+  ranges.erase(it);
+  DCHECK_GE(total, ret.len);
+  total -= ret.len;
+  DCHECK(is_consistent());
+  return ret;
+}
+
+void PageAllocator::Freelist::add_range(
+    PageAllocator::MappedRange&& range) {
+  total += range.len;
+  auto result = freelist.ranges.emplace(std::move(range));
+  CHECK(result.second);  // Insertion did take place.
+  DCHECK(is_consistent());
+}
+
+bool PageAllocator::Freelist::is_consistent() const {
+  size_t sum = 0;
+  for (const MappedRange& range : ranges)
+    sum += range.len;
+  return sum == total;
+}
+
+PageAllocator::MappedRange::~MappedRange() {
+  if (len > 0 && (len & kDontFreeTag) == 0 && base != nullptr)
+    CHECK_EQ(munmap(base, len), 0);
+}
+
+PageAllocator::MappedRange::MappedRange(MappedRange&& other) {
+  *this = std::move(other);
+}
+
+PageAllocator::MappedRange&
+PageAllocator::MappedRange::operator=(MappedRange&& other) {
+  if (this == &other) return *this;
+  this->~MappedRange();
+  base = other.base;
+  len = other.len;
+  other.base = nullptr;
+  other.len = 0;
+  return *this;
+}
+
+PageAllocator::MappedRange
+PageAllocator::MappedRange::SliceOff(size_t size) {
+  CHECK_LE(size, len);
+  MappedRange remainder { base, size };
+  base = static_cast<char*>(base) + size;
+  len -= size;
+  return remainder;
+}
+
+PageAllocator::PageAllocator(v8::Platform* platform)
+  : platform_(platform) {}
+
+MaybePageAllocator::MaybePageAllocator(v8::Platform* platform)
+  : paging_allocator_(platform) {}
+
+MaybePageAllocator::~MaybePageAllocator() {
+  CHECK(allocations_.empty());
+}
+
+char* MaybePageAllocator::Allocate(size_t size) {
+  if (size < pagesize)
+    return UncheckedMalloc(size);
+  PageAllocator::MappedRange ret_range = paging_allocator_.Allocate(size);
+  char* mem = static_cast<char*>(ret_range.base);
+  allocations_.emplace_back(std::move(ret_range));
+  return mem;
+}
+
+#ifndef MAP_UNINITIALIZED
+#define MAP_UNINITIALIZED 0
+#endif
+
+PageAllocator::MappedRange PageAllocator::Allocate(size_t size) {
+  size = RoundUp(size, pagesize);
+
+  {
+    Mutex::ScopedLock lock(freelist.mutex);
+    auto it = freelist.ranges.lower_bound({ nullptr, size });
+    if (it != freelist.ranges.end()) {
+      MappedRange free_range = freelist.extract(it);
+      MappedRange ret_range = free_range.SliceOff(size);
+      if (free_range.len > 0)
+        freelist.add_range(std::move(free_range));
+      return ret_range;
+    }
+  }
+
+  void* mem = mmap(nullptr, size, PROT_READ | PROT_WRITE,
+                   MAP_UNINITIALIZED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (mem == MAP_FAILED) return MappedRange { nullptr, 0 };
+  return MappedRange { mem, size };
+}
+
+void PageAllocator::ReleasePagesTask::Run() {
+  std::vector<MappedRange> deleteme;
+  {
+    Mutex::ScopedLock lock(freelist.mutex);
+    while (freelist.total > Freelist::kTargetSize) {
+      CHECK(!freelist.ranges.empty());
+      size_t wants_freed = freelist.total - Freelist::kTargetSize;
+      MappedRange range = freelist.extract(freelist.ranges.begin());
+      if (range.len <= wants_freed) {
+        deleteme.emplace_back(std::move(range));
+      } else {
+        deleteme.emplace_back(range.SliceOff(wants_freed));
+        freelist.add_range(std::move(range));
+      }
+    }
+  }
+
+  freelist.release_scheduled.clear(std::memory_order_relaxed);
+  freelist.delayed_release_scheduled.clear(std::memory_order_relaxed);
+  // Destroying `deleteme` does the actual work here. It should happen once
+  // the mutex is unlocked, since munmap() may take a bit.
+}
+
+void MaybePageAllocator::Free(char* pointer) {
+  if (reinterpret_cast<uintptr_t>(pointer) % pagesize != 0) {
+    free(pointer);
+    return;
+  }
+
+  auto it = std::find_if(allocations_.begin(),
+                         allocations_.end(),
+                         [&](const PageAllocator::MappedRange& range) {
+    return pointer == range.base;
+  });
+  if (UNLIKELY(it == allocations_.end())) {
+    free(pointer);
+  } else {
+    paging_allocator_.Free(std::move(*it));
+    allocations_.erase(it);
+  }
+}
+
+void PageAllocator::Free(MappedRange&& range) {
+  size_t new_total;
+  {
+    Mutex::ScopedLock lock(freelist.mutex);
+    freelist.add_range(std::move(range));
+    new_total = freelist.total;
+  }
+
+  // munmap() can be pretty expensive, so it's worth running it on a
+  // background thread. That also gives us the chance to see if we can
+  // re-use pages.
+  if (new_total > Freelist::kReleaseThreshold) {
+    if (!freelist.release_scheduled.test_and_set(std::memory_order_relaxed)) {
+      platform_->CallOnWorkerThread(std::make_unique<ReleasePagesTask>());
+    }
+  } else if (new_total > Freelist::kTargetSize) {
+    if (!freelist.delayed_release_scheduled.test_and_set(
+            std::memory_order_relaxed)) {
+      platform_->CallDelayedOnWorkerThread(
+          std::make_unique<ReleasePagesTask>(), 5);
+    }
+  }
+}
 
 namespace {
 
@@ -240,7 +506,8 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
   CompressionStream(Environment* env, Local<Object> wrap)
       : AsyncWrap(env, wrap, AsyncWrap::PROVIDER_ZLIB),
         ThreadPoolWork(env),
-        write_result_(nullptr) {
+        write_result_(nullptr),
+        allocator_(env->isolate_data()->platform()) {
     MakeWeak();
   }
 
@@ -469,7 +736,7 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
   static void* AllocForBrotli(void* data, size_t size) {
     size += sizeof(size_t);
     CompressionStream* ctx = static_cast<CompressionStream*>(data);
-    char* memory = UncheckedMalloc(size);
+    char* memory = ctx->allocator_.Allocate(size);
     if (UNLIKELY(memory == nullptr)) return nullptr;
     *reinterpret_cast<size_t*>(memory) = size;
     ctx->unreported_allocations_.fetch_add(size,
@@ -484,7 +751,7 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
     size_t real_size = *reinterpret_cast<size_t*>(real_pointer);
     ctx->unreported_allocations_.fetch_sub(real_size,
                                            std::memory_order_relaxed);
-    free(real_pointer);
+    ctx->allocator_.Free(real_pointer);
   }
 
   // This is called on the main thread after zlib may have allocated something
@@ -525,6 +792,8 @@ class CompressionStream : public AsyncWrap, public ThreadPoolWork {
   unsigned int refs_ = 0;
   uint32_t* write_result_ = nullptr;
   Persistent<Function> write_js_callback_;
+
+  MaybePageAllocator allocator_;
   std::atomic<ssize_t> unreported_allocations_{0};
   size_t zlib_memory_ = 0;
 
