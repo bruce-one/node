@@ -5,9 +5,12 @@
 #ifndef V8_HEAP_MARK_COMPACT_INL_H_
 #define V8_HEAP_MARK_COMPACT_INL_H_
 
+#include "src/heap/mark-compact.h"
+
 #include "src/assembler-inl.h"
 #include "src/base/bits.h"
-#include "src/heap/mark-compact.h"
+#include "src/heap/heap-inl.h"
+#include "src/heap/incremental-marking.h"
 #include "src/heap/objects-visiting-inl.h"
 #include "src/heap/remembered-set.h"
 #include "src/objects/js-collection-inl.h"
@@ -247,7 +250,7 @@ int MarkingVisitor<fixed_array_mode, retaining_path_mode,
       // Record the slot inside the JSWeakRef, since the IterateBody below
       // won't visit it.
       ObjectSlot slot =
-          HeapObject::RawField(weak_ref, JSWeakCell::kTargetOffset);
+          HeapObject::RawField(weak_ref, JSWeakRef::kTargetOffset);
       collector_->RecordSlot(weak_ref, slot, target);
     } else {
       // JSWeakRef points to a potentially dead object. We have to process
@@ -263,24 +266,23 @@ int MarkingVisitor<fixed_array_mode, retaining_path_mode,
 template <FixedArrayVisitationMode fixed_array_mode,
           TraceRetainingPathMode retaining_path_mode, typename MarkingState>
 int MarkingVisitor<fixed_array_mode, retaining_path_mode,
-                   MarkingState>::VisitJSWeakCell(Map map,
-                                                  JSWeakCell weak_cell) {
+                   MarkingState>::VisitWeakCell(Map map, WeakCell weak_cell) {
   if (weak_cell->target()->IsHeapObject()) {
     HeapObject target = HeapObject::cast(weak_cell->target());
     if (marking_state()->IsBlackOrGrey(target)) {
-      // Record the slot inside the JSWeakCell, since the IterateBody below
+      // Record the slot inside the WeakCell, since the IterateBody below
       // won't visit it.
       ObjectSlot slot =
-          HeapObject::RawField(weak_cell, JSWeakCell::kTargetOffset);
+          HeapObject::RawField(weak_cell, WeakCell::kTargetOffset);
       collector_->RecordSlot(weak_cell, slot, target);
     } else {
-      // JSWeakCell points to a potentially dead object. We have to process
+      // WeakCell points to a potentially dead object. We have to process
       // them when we know the liveness of the whole transitive closure.
       collector_->AddWeakCell(weak_cell);
     }
   }
-  int size = JSWeakCell::BodyDescriptor::SizeOf(map, weak_cell);
-  JSWeakCell::BodyDescriptor::IterateBody(map, weak_cell, size, this);
+  int size = WeakCell::BodyDescriptor::SizeOf(map, weak_cell);
+  WeakCell::BodyDescriptor::IterateBody(map, weak_cell, size, this);
   return size;
 }
 
@@ -459,7 +461,8 @@ void MarkCompactCollector::MarkRootObject(Root root, HeapObject obj) {
 #ifdef ENABLE_MINOR_MC
 
 void MinorMarkCompactCollector::MarkRootObject(HeapObject obj) {
-  if (Heap::InNewSpace(obj) && non_atomic_marking_state_.WhiteToGrey(obj)) {
+  if (Heap::InYoungGeneration(obj) &&
+      non_atomic_marking_state_.WhiteToGrey(obj)) {
     worklist_->Push(kMainThread, obj);
   }
 }

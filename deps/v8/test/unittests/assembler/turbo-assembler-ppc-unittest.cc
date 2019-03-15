@@ -24,6 +24,8 @@ TEST_F(TurboAssemblerTest, TestHardAbort) {
   auto buffer = AllocateAssemblerBuffer();
   TurboAssembler tasm(nullptr, AssemblerOptions{}, CodeObjectRequired::kNo,
                       buffer->CreateView());
+  // Called from C
+  __ function_descriptor();
 
   __ set_abort_hard(true);
 
@@ -42,6 +44,8 @@ TEST_F(TurboAssemblerTest, TestCheck) {
   auto buffer = AllocateAssemblerBuffer();
   TurboAssembler tasm(nullptr, AssemblerOptions{}, CodeObjectRequired::kNo,
                       buffer->CreateView());
+  // Called from C
+  __ function_descriptor();
 
   __ set_abort_hard(true);
 

@@ -24,7 +24,7 @@ static constexpr int kBufferSize = 8 * KB;
 static void FloodWithInc(Isolate* isolate, TestingAssemblerBuffer* buffer) {
   MacroAssembler masm(isolate, CodeObjectRequired::kYes, buffer->CreateView());
 #if V8_TARGET_ARCH_IA32
-  __ mov(eax, Operand(esp, kPointerSize));
+  __ mov(eax, Operand(esp, kSystemPointerSize));
   for (int i = 0; i < kNumInstr; ++i) {
     __ add(eax, Immediate(1));
   }
@@ -52,6 +52,7 @@ static void FloodWithInc(Isolate* isolate, TestingAssemblerBuffer* buffer) {
     __ Addu(v0, v0, Operand(1));
   }
 #elif V8_TARGET_ARCH_PPC
+  __ function_descriptor();
   for (int i = 0; i < kNumInstr; ++i) {
     __ addi(r3, r3, Operand(1));
   }
@@ -70,13 +71,15 @@ static void FloodWithInc(Isolate* isolate, TestingAssemblerBuffer* buffer) {
 static void FloodWithNop(Isolate* isolate, TestingAssemblerBuffer* buffer) {
   MacroAssembler masm(isolate, CodeObjectRequired::kYes, buffer->CreateView());
 #if V8_TARGET_ARCH_IA32
-  __ mov(eax, Operand(esp, kPointerSize));
+  __ mov(eax, Operand(esp, kSystemPointerSize));
 #elif V8_TARGET_ARCH_X64
   __ movl(rax, arg_reg_1);
 #elif V8_TARGET_ARCH_MIPS
   __ mov(v0, a0);
 #elif V8_TARGET_ARCH_MIPS64
   __ mov(v0, a0);
+#elif V8_TARGET_ARCH_PPC
+  __ function_descriptor();
 #endif
   for (int i = 0; i < kNumInstr; ++i) {
     __ nop();
@@ -101,14 +104,14 @@ TEST(TestFlushICacheOfWritable) {
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadWrite));
     FloodWithInc(isolate, buffer.get());
-    Assembler::FlushICache(buffer->start(), buffer->size());
+    FlushInstructionCache(buffer->start(), buffer->size());
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadExecute));
     CHECK_EQ(23 + kNumInstr, f.Call(23));  // Call into generated code.
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadWrite));
     FloodWithNop(isolate, buffer.get());
-    Assembler::FlushICache(buffer->start(), buffer->size());
+    FlushInstructionCache(buffer->start(), buffer->size());
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadExecute));
     CHECK_EQ(23, f.Call(23));  // Call into generated code.
@@ -148,14 +151,14 @@ CONDITIONAL_TEST(TestFlushICacheOfExecutable) {
     FloodWithInc(isolate, buffer.get());
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadExecute));
-    Assembler::FlushICache(buffer->start(), buffer->size());
+    FlushInstructionCache(buffer->start(), buffer->size());
     CHECK_EQ(23 + kNumInstr, f.Call(23));  // Call into generated code.
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadWrite));
     FloodWithNop(isolate, buffer.get());
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadExecute));
-    Assembler::FlushICache(buffer->start(), buffer->size());
+    FlushInstructionCache(buffer->start(), buffer->size());
     CHECK_EQ(23, f.Call(23));  // Call into generated code.
   }
 }
@@ -177,10 +180,10 @@ TEST(TestFlushICacheOfWritableAndExecutable) {
     CHECK(SetPermissions(GetPlatformPageAllocator(), buffer->start(),
                          buffer->size(), v8::PageAllocator::kReadWriteExecute));
     FloodWithInc(isolate, buffer.get());
-    Assembler::FlushICache(buffer->start(), buffer->size());
+    FlushInstructionCache(buffer->start(), buffer->size());
     CHECK_EQ(23 + kNumInstr, f.Call(23));  // Call into generated code.
     FloodWithNop(isolate, buffer.get());
-    Assembler::FlushICache(buffer->start(), buffer->size());
+    FlushInstructionCache(buffer->start(), buffer->size());
     CHECK_EQ(23, f.Call(23));  // Call into generated code.
   }
 }

@@ -18,7 +18,6 @@
 namespace v8 {
 namespace internal {
 
-#ifndef V8_INTERPRETED_REGEXP
 /*
  * This assembler uses the following register assignment convention
  * - r25: Temporarily stores the index of capture start after a matching pass
@@ -109,9 +108,6 @@ RegExpMacroAssemblerPPC::RegExpMacroAssemblerPPC(Isolate* isolate, Zone* zone,
       exit_label_(),
       internal_failure_label_() {
   DCHECK_EQ(0, registers_to_save % 2);
-
-  // Because RegExp code respects C ABI, so needs a FD
-  __ function_descriptor();
 
   __ b(&entry_label_);  // We'll write the entry code later.
   // If the code gets too big or corrupted, an internal exception will be
@@ -373,7 +369,6 @@ void RegExpMacroAssemblerPPC::CheckNotBackReference(int start_reg,
                                                     bool read_backward,
                                                     Label* on_no_match) {
   Label fallthrough;
-  Label success;
 
   // Find length of back-referenced capture.
   __ LoadP(r3, register_location(start_reg), r0);
@@ -909,8 +904,6 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
     // Backtrack stack overflow code.
     if (stack_overflow_label_.is_linked()) {
       SafeCallTarget(&stack_overflow_label_);
-      // Reached if the backtrack-stack limit has been hit.
-      Label grow_failed;
 
       // Call GrowStack(backtrack_stackpointer(), &stack_base)
       static const int num_arguments = 3;
@@ -1098,7 +1091,7 @@ void RegExpMacroAssemblerPPC::WriteStackPointerToRegister(int reg) {
 // Private methods:
 
 void RegExpMacroAssemblerPPC::CallCheckStackGuardState(Register scratch) {
-  DCHECK(!isolate()->ShouldLoadConstantsFromRootList());
+  DCHECK(!isolate()->IsGeneratingEmbeddedBuiltins());
   DCHECK(!masm_->options().isolate_independent_code);
 
   int frame_alignment = masm_->ActivationFrameAlignment();
@@ -1337,10 +1330,8 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
 #endif
 }
 
-
 #undef __
 
-#endif  // V8_INTERPRETED_REGEXP
 }  // namespace internal
 }  // namespace v8
 
