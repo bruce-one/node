@@ -33,6 +33,19 @@
 
 ### Notable Changes
 
+* **deps**:
+    * update V8 to 7.4.288.13 (Michaël Zasso, cjihrig, Refael Ackermann, Anna Henningsen, Ujjwal Sharma) [#26685](https://github.com/nodejs/node/pull/26685)
+    * update OpenSSL to 1.1.1b (Sam Roberts, Shigeki Ohtsu) [#26327](https://github.com/nodejs/node/pull/26327)
+* **http**:
+    * switch default parser to llhttp (Anna Henningsen) [#24870](https://github.com/nodejs/node/pull/24870)
+* **src**:
+    * properly configure default heap limits (Ali Ijaz Sheikh) [#25576](https://github.com/nodejs/node/pull/25576)
+* **tls**:
+    * support TLSv1.3 (Sam Roberts) [#26209](https://github.com/nodejs/node/pull/26209)
+    * disable TLS v1.0 and v1.1 by default (Ben Noordhuis) [#23814](https://github.com/nodejs/node/pull/23814)
+
+### Other semver-major changes
+
 * **assert**:
     * validate required arguments (Ruben Bridgewater) [#26641](https://github.com/nodejs/node/pull/26641)
     * adjust loose assertions (Ruben Bridgewater) [#25008](https://github.com/nodejs/node/pull/25008)
@@ -57,9 +70,7 @@
     * remove deprecated `crypto._toBuf()` (Tobias Nießen) [#25338](https://github.com/nodejs/node/pull/25338)
     * set `DEFAULT\_ENCODING` property to non-enumerable (Antoine du Hamel) [#23222](https://github.com/nodejs/node/pull/23222)
 * **deps**:
-    * update V8 to 7.4.288.13 (Michaël Zasso, cjihrig, Refael Ackermann, Anna Henningsen, Ujjwal Sharma) [#26685](https://github.com/nodejs/node/pull/26685)
     * bump minimum icu version to 63 (Ujjwal Sharma) [#25852](https://github.com/nodejs/node/pull/25852)
-    * update OpenSSL to 1.1.1b (Sam Roberts, Shigeki Ohtsu) [#26327](https://github.com/nodejs/node/pull/26327)
 * **errors**: update error name (Ruben Bridgewater) [#26738](https://github.com/nodejs/node/pull/26738)
 * **fs**:
     * use proper .destroy() implementation for SyncWriteStream (Matteo Collina) [#26690](https://github.com/nodejs/node/pull/26690)
@@ -69,7 +80,6 @@
 * **http**:
     * validate timeout in `ClientRequest()` (cjihrig) [#26214](https://github.com/nodejs/node/pull/26214)
     * return HTTP 431 on `HPE_HEADER_OVERFLOW` error (Albert Still) [#25605](https://github.com/nodejs/node/pull/25605)
-    * switch default parser to llhttp (Anna Henningsen) [#24870](https://github.com/nodejs/node/pull/24870)
     * Runtime-deprecate `outgoingMessage._headers` and `outgoingMessage._headerNames` (Morgan Roderick) [#24167](https://github.com/nodejs/node/pull/24167)
 * **lib**:
     * remove `Atomics.wake()` (Gus Caplan) [#27033](https://github.com/nodejs/node/pull/27033)
@@ -108,15 +118,12 @@
     * update `NODE_MODULE_VERSION` to 72 (Ujjwal Sharma) [#26685](https://github.com/nodejs/node/pull/26685)
     * remove `AddPromiseHook()` (Anna Henningsen) [#26574](https://github.com/nodejs/node/pull/26574)
     * clean up `MultiIsolatePlatform` interface (Anna Henningsen) [#26384](https://github.com/nodejs/node/pull/26384)
-    * properly configure default heap limits (Ali Ijaz Sheikh) [#25576](https://github.com/nodejs/node/pull/25576)
     * remove `icuDataDir` from node config (GauthamBanasandra) [#24780](https://github.com/nodejs/node/pull/24780)
 * **tls**:
-    * support TLSv1.3 (Sam Roberts) [#26209](https://github.com/nodejs/node/pull/26209)
     * return correct version from `getCipher()` (Sam Roberts) [#26625](https://github.com/nodejs/node/pull/26625)
     * check arg types of renegotiate() (Sam Roberts) [#25876](https://github.com/nodejs/node/pull/25876)
     * add code for `ERR_TLS_INVALID_PROTOCOL_METHOD` (Sam Roberts) [#24729](https://github.com/nodejs/node/pull/24729)
     * emit a warning when servername is an IP address (Rodger Combs) [#23329](https://github.com/nodejs/node/pull/23329)
-    * disable TLS v1.0 and v1.1 by default (Ben Noordhuis) [#23814](https://github.com/nodejs/node/pull/23814)
     * remove unused arg to createSecureContext() (Sam Roberts) [#24241](https://github.com/nodejs/node/pull/24241)
     * deprecate `Server.prototype.setOptions()` (cjihrig) [#23820](https://github.com/nodejs/node/pull/23820)
     * load `NODE_EXTRA_CA_CERTS` at startup (Ouyang Yadong) [#23354](https://github.com/nodejs/node/pull/23354)
