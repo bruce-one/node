@@ -1,6 +1,9 @@
 #include "env-inl.h"
 #include "util-inl.h"
 #include "v8.h"
+#include "handle_wrap.h"
+#include "async_wrap-inl.h"
+#include "base_object-inl.h"
 
 #include <cstdint>
 
@@ -10,11 +13,73 @@ namespace {
 using v8::Array;
 using v8::Context;
 using v8::Function;
+using v8::FunctionTemplate;
 using v8::FunctionCallbackInfo;
+using v8::HandleScope;
 using v8::Integer;
 using v8::Local;
+using v8::Number;
 using v8::Object;
+using v8::String;
 using v8::Value;
+
+class TimerWrap : public HandleWrap {
+ public:
+  TimerWrap(Environment* env,
+            v8::Local<v8::Object> wrap);
+
+  static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void Start(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(TimerWrap)
+  SET_SELF_SIZE(TimerWrap)
+
+ private:
+  static void Callback(uv_timer_t* handle);
+
+  uv_timer_t timer_;
+};
+
+TimerWrap::TimerWrap(Environment* env,
+                     Local<Object> wrap)
+    : HandleWrap(env,
+                 wrap,
+                 reinterpret_cast<uv_handle_t*>(&timer_),
+                 AsyncWrap::PROVIDER_TIMER) {
+  CHECK_EQ(0, uv_timer_init(env->event_loop(), &timer_));
+}
+
+
+void TimerWrap::Callback(uv_timer_t* handle) {
+  TimerWrap* wrap = ContainerOf(&TimerWrap::timer_, handle);
+  Environment* env = wrap->env();
+  HandleScope handle_scope(env->isolate());
+  Context::Scope context_scope(env->context());
+
+  wrap->MakeCallback(env->ontimeout_string(), 0, nullptr);
+}
+
+
+void TimerWrap::New(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args.IsConstructCall());
+  Environment* env = Environment::GetCurrent(args);
+  new TimerWrap(env, args.This());
+}
+
+// wrap.start(timeout_ms)
+void TimerWrap::Start(const FunctionCallbackInfo<Value>& args) {
+  TimerWrap* wrap;
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+
+  CHECK(args[0]->IsNumber());
+  // XXX In the talk this was args[1] which is why it didn’t work :/
+  const double timeout_ms = args[0].As<Number>()->Value();
+
+  // Note that uv_fs_poll_start does not return ENOENT, we are handling
+  // mostly memory errors here.
+  CHECK_EQ(0, uv_timer_start(&wrap->timer_, Callback, timeout_ms, 0));
+}
 
 void SetupTimers(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsFunction());
@@ -54,6 +119,18 @@ void Initialize(Local<Object> target,
   env->SetMethod(target, "scheduleTimer", ScheduleTimer);
   env->SetMethod(target, "toggleTimerRef", ToggleTimerRef);
   env->SetMethod(target, "toggleImmediateRef", ToggleImmediateRef);
+
+  Local<FunctionTemplate> t = env->NewFunctionTemplate(TimerWrap::New);
+  t->InstanceTemplate()->SetInternalFieldCount(1);
+  Local<String> timer_wrap_string =
+      FIXED_ONE_BYTE_STRING(env->isolate(), "TimerWrap");
+  t->SetClassName(timer_wrap_string);
+  t->Inherit(HandleWrap::GetConstructorTemplate(env));
+
+  env->SetProtoMethod(t, "start", TimerWrap::Start);
+
+  target->Set(env->context(), timer_wrap_string,
+              t->GetFunction(env->context()).ToLocalChecked()).Check();
 
   target->Set(env->context(),
               FIXED_ONE_BYTE_STRING(env->isolate(), "immediateInfo"),
