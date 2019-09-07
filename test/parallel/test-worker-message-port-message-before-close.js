@@ -26,7 +26,7 @@ async function test() {
     port.close();
   });
   `, { eval: true });
-  worker.unref();
+  // worker.unref();
 
   for (let i = 0; i < 10000; i++) {
     const { port1, port2 } = new MessageChannel();
