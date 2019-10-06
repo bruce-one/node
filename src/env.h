@@ -293,9 +293,10 @@ constexpr size_t kFsStatsBufferLength =
   V(onocspresponse_string, "onocspresponse")                                   \
   V(onreadstart_string, "onreadstart")                                         \
   V(onreadstop_string, "onreadstop")                                           \
-  V(onshutdown_string, "onshutdown")                                           \
   V(onsignal_string, "onsignal")                                               \
+  V(onshutdown_string, "onshutdown")                                           \
   V(onunpipe_string, "onunpipe")                                               \
+  V(ontimeout_string, "ontimeout")                                             \
   V(onwrite_string, "onwrite")                                                 \
   V(openssl_error_stack, "opensslErrorStack")                                  \
   V(options_string, "options")                                                 \
