@@ -75,9 +75,7 @@ class Worker : public AsyncWrap {
   bool start_profiler_idle_notifier_;
   uv_thread_t tid_;
 
-#if HAVE_INSPECTOR
-  std::unique_ptr<inspector::ParentInspectorHandle> inspector_parent_handle_;
-#endif
+  std::unique_ptr<InspectorParentHandle> inspector_parent_handle_;
 
   // This mutex protects access to all variables listed below it.
   mutable Mutex mutex_;
@@ -85,7 +83,7 @@ class Worker : public AsyncWrap {
   bool thread_joined_ = true;
   const char* custom_error_ = nullptr;
   int exit_code_ = 0;
-  uint64_t thread_id_ = -1;
+  ThreadId thread_id_;
   uintptr_t stack_base_ = 0;
 
   // Custom resource constraints:
