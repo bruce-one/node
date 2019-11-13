@@ -419,11 +419,12 @@ NODE_EXTERN std::unique_ptr<InspectorParentHandle> GetInspectorParentHandle(
 }
 
 void LoadEnvironment(Environment* env) {
-  USE(LoadEnvironment(env, {}, ProfilerIdleNotifierMode::kDefault));
+  USE(LoadEnvironment(env, nullptr, {}, ProfilerIdleNotifierMode::kDefault));
 }
 
 MaybeLocal<Value> LoadEnvironment(
     Environment* env,
+    StartExecutionCallback cb,
     std::unique_ptr<InspectorParentHandle> inspector_parent_handle,
     ProfilerIdleNotifierMode start_profiler_idle_notifier) {
   switch (start_profiler_idle_notifier) {
@@ -450,9 +451,7 @@ MaybeLocal<Value> LoadEnvironment(
   }
 #endif
 
-  // TODO(joyeecheung): Allow embedders to customize the entry
-  // point more directly without using _third_party_main.js
-  return StartExecution(env);
+  return StartExecution(env, cb);
 }
 
 Environment* GetCurrentEnvironment(Local<Context> context) {
