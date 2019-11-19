@@ -304,7 +304,7 @@ void Worker::Run() {
         CreateEnvMessagePort(env_.get());
         Debug(this, "Created message port for worker %llu", thread_id_);
         if (LoadEnvironment(env_.get(),
-                            nullptr,
+                            StartExecutionCallback{},
                             std::move(inspector_parent_handle_),
                             start_profiler_idle_notifier_ ?
                                 ProfilerIdleNotifierMode::kStart :

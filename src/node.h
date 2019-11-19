@@ -436,6 +436,12 @@ NODE_EXTERN v8::MaybeLocal<v8::Value> LoadEnvironment(
     std::unique_ptr<InspectorParentHandle> inspector_parent_handle = {},
     ProfilerIdleNotifierMode start_profiler_idle_notifier =
         ProfilerIdleNotifierMode::kDefault);
+NODE_EXTERN v8::MaybeLocal<v8::Value> LoadEnvironment(
+    Environment* env,
+    const char* main_script_source_utf8,
+    std::unique_ptr<InspectorParentHandle> inspector_parent_handle = {},
+    ProfilerIdleNotifierMode start_profiler_idle_notifier =
+        ProfilerIdleNotifierMode::kDefault);
 NODE_EXTERN void FreeEnvironment(Environment* env);
 
 // This may return nullptr if context is not associated with a Node instance.
