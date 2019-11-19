@@ -194,11 +194,13 @@ class Reference : private Finalizer, RefTracker {
             bool delete_self,
             napi_finalize finalize_callback,
             void* finalize_data,
-            void* finalize_hint)
+            void* finalize_hint,
+            bool detach_ab_on_env_exit)
        : Finalizer(env, finalize_callback, finalize_data, finalize_hint),
         _persistent(env->isolate, value),
         _refcount(initial_refcount),
-        _delete_self(delete_self) {
+        _delete_self(delete_self),
+        _detach_ab_on_env_exit(detach_ab_on_env_exit) {
     if (initial_refcount == 0) {
       _persistent.SetWeak(
           this, FinalizeCallback, v8::WeakCallbackType::kParameter);
@@ -219,14 +221,16 @@ class Reference : private Finalizer, RefTracker {
                         bool delete_self,
                         napi_finalize finalize_callback = nullptr,
                         void* finalize_data = nullptr,
-                        void* finalize_hint = nullptr) {
+                        void* finalize_hint = nullptr,
+                        bool detach_ab_on_env_exit = false) {
     return new Reference(env,
       value,
       initial_refcount,
       delete_self,
       finalize_callback,
       finalize_data,
-      finalize_hint);
+      finalize_hint,
+      detach_ab_on_env_exit);
   }
 
   // Delete is called in 2 ways. Either from the finalizer or
@@ -300,6 +304,15 @@ class Reference : private Finalizer, RefTracker {
       });
     }
 
+    if (is_env_teardown && _detach_ab_on_env_exit) {
+      v8::HandleScope handle_scope(_env->isolate);
+      CHECK(!_persistent.IsEmpty());
+      v8::Local<v8::Value> ab = _persistent.Get(_env->isolate);
+      CHECK(!ab.IsEmpty());
+      CHECK(ab->IsArrayBuffer());
+      ab.As<v8::ArrayBuffer>()->Detach();
+    }
+
     // this is safe because if a request to delete the reference
     // is made in the finalize_callback it will defer deletion
     // to this block and set _delete_self to true
@@ -333,6 +346,7 @@ class Reference : private Finalizer, RefTracker {
   v8impl::Persistent<v8::Value> _persistent;
   uint32_t _refcount;
   bool _delete_self;
+  bool _detach_ab_on_env_exit;
 };
 
 enum UnwrapAction {
@@ -2593,7 +2607,8 @@ napi_status napi_create_external_arraybuffer(napi_env env,
         true,
         finalize_cb,
         external_data,
-        finalize_hint);
+        finalize_hint,
+        true /* detach array buffer on env exit */);
   }
 
   *result = v8impl::JsValueFromV8LocalValue(buffer);
