@@ -186,21 +186,19 @@ inline static napi_status ConcludeDeferred(napi_env env,
 }
 
 // Wrapper around v8impl::Persistent that implements reference counting.
-class Reference : private Finalizer, RefTracker {
- private:
+class Reference : protected Finalizer, RefTracker {
+ protected:
   Reference(napi_env env,
             v8::Local<v8::Value> value,
             uint32_t initial_refcount,
             bool delete_self,
             napi_finalize finalize_callback,
             void* finalize_data,
-            void* finalize_hint,
-            bool detach_ab_on_env_exit)
+            void* finalize_hint)
        : Finalizer(env, finalize_callback, finalize_data, finalize_hint),
         _persistent(env->isolate, value),
         _refcount(initial_refcount),
-        _delete_self(delete_self),
-        _detach_ab_on_env_exit(detach_ab_on_env_exit) {
+        _delete_self(delete_self) {
     if (initial_refcount == 0) {
       _persistent.SetWeak(
           this, FinalizeCallback, v8::WeakCallbackType::kParameter);
@@ -221,16 +219,14 @@ class Reference : private Finalizer, RefTracker {
                         bool delete_self,
                         napi_finalize finalize_callback = nullptr,
                         void* finalize_data = nullptr,
-                        void* finalize_hint = nullptr,
-                        bool detach_ab_on_env_exit = false) {
+                        void* finalize_hint = nullptr) {
     return new Reference(env,
       value,
       initial_refcount,
       delete_self,
       finalize_callback,
       finalize_data,
-      finalize_hint,
-      detach_ab_on_env_exit);
+      finalize_hint);
   }
 
   // Delete is called in 2 ways. Either from the finalizer or
@@ -293,7 +289,7 @@ class Reference : private Finalizer, RefTracker {
     }
   }
 
- private:
+ protected:
   void Finalize(bool is_env_teardown = false) override {
     if (_finalize_callback != nullptr) {
       _env->CallIntoModuleThrow([&](napi_env env) {
@@ -302,15 +298,6 @@ class Reference : private Finalizer, RefTracker {
             _finalize_data,
             _finalize_hint);
       });
-    }
-
-    if (is_env_teardown && _detach_ab_on_env_exit) {
-      v8::HandleScope handle_scope(_env->isolate);
-      CHECK(!_persistent.IsEmpty());
-      v8::Local<v8::Value> ab = _persistent.Get(_env->isolate);
-      CHECK(!ab.IsEmpty());
-      CHECK(ab->IsArrayBuffer());
-      ab.As<v8::ArrayBuffer>()->Detach();
     }
 
     // this is safe because if a request to delete the reference
@@ -323,6 +310,7 @@ class Reference : private Finalizer, RefTracker {
     }
   }
 
+ private:
   // The N-API finalizer callback may make calls into the engine. V8's heap is
   // not in a consistent state during the weak callback, and therefore it does
   // not support calls back into it. However, it provides a mechanism for adding
@@ -346,7 +334,32 @@ class Reference : private Finalizer, RefTracker {
   v8impl::Persistent<v8::Value> _persistent;
   uint32_t _refcount;
   bool _delete_self;
-  bool _detach_ab_on_env_exit;
+};
+
+class ArrayBufferReference final : public Reference {
+ public:
+  // Same signatures for ctor and New() as Reference:
+  template <typename... Args>
+  explicit ArrayBufferReference(Args&&... args)
+    : Reference(std::forward<Args>(args)...) {}
+
+  template <typename... Args>
+  static ArrayBufferReference* New(Args&&... args) {
+    return new ArrayBufferReference(std::forward<Args>(args)...);
+  }
+
+ private:
+  void Finalize(bool is_env_teardown) override {
+    if (is_env_teardown) {
+      v8::HandleScope handle_scope(_env->isolate);
+      v8::Local<v8::Value> ab = Get();
+      CHECK(!ab.IsEmpty());
+      CHECK(ab->IsArrayBuffer());
+      ab.As<v8::ArrayBuffer>()->Detach();
+    }
+
+    Reference::Finalize(is_env_teardown);
+  }
 };
 
 enum UnwrapAction {
@@ -2600,15 +2613,15 @@ napi_status napi_create_external_arraybuffer(napi_env env,
 
   if (finalize_cb != nullptr) {
     // Create a self-deleting weak reference that invokes the finalizer
-    // callback.
-    v8impl::Reference::New(env,
+    // callback and detaches the ArrayBuffer if it still exists on Environment
+    // teardown.
+    v8impl::ArrayBufferReference::New(env,
         buffer,
         0,
         true,
         finalize_cb,
         external_data,
-        finalize_hint,
-        true /* detach array buffer on env exit */);
+        finalize_hint);
   }
 
   *result = v8impl::JsValueFromV8LocalValue(buffer);
